@@ -274,6 +274,15 @@ mod tests {
     }
 
     #[test]
+    fn timestamps_roundtrip_exactly() {
+        for i in 0..1000 {
+            let note = Note { created: 1.791748070436144e9 + i as f64 * 0.000_137, ..Default::default() };
+            let back: Note = serde_json::from_str(&serde_json::to_string(&note).unwrap()).unwrap();
+            assert_eq!(back.created.to_bits(), note.created.to_bits(), "{}", note.created);
+        }
+    }
+
+    #[test]
     fn ids_are_unique_hex() {
         let (a, b) = (new_id(), new_id());
         assert_ne!(a, b);

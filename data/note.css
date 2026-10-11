@@ -42,15 +42,14 @@ window.note textview text selection {
   background-color: var(--note-tint-strong);
   color: var(--note-fg);
 }
+/* Text insets are set in code (editor::TEXT_INSET) so the placeholder can match. */
 window.note textview.note-text {
   font-size: 11pt;
-  padding: 4px 16px 16px 16px;
 }
 
 window.note .placeholder {
   color: var(--note-dim);
   font-size: 11pt;
-  margin: 4px 16px;
 }
 
 window.note scrollbar { background: none; }
@@ -70,6 +69,21 @@ window.note .draw-bar separator {
   min-width: 1px;
 }
 
+/* Popovers (colours, ink, menu) take on the note's colour instead of the
+   default grey, so they read as part of the note. */
+window.note popover > contents {
+  background-color: var(--note-bg);
+  color: var(--note-fg);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.22), inset 0 0 0 1px var(--note-tint-strong);
+}
+window.note popover > arrow {
+  background-color: var(--note-bg);
+  border-color: var(--note-tint-strong);
+}
+window.note popover modelbutton:hover,
+window.note popover modelbutton:selected { background-color: var(--note-tint); }
+window.note popover separator { background-color: var(--note-tint-strong); }
+
 /* Colour dots (note colours + ink colours) */
 .swatch, .ink {
   min-width: 22px;
@@ -80,6 +94,14 @@ window.note .draw-bar separator {
 }
 .swatch:checked, .ink:checked {
   box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12), 0 0 0 2px @accent_bg_color;
+}
+/* Inside a note, mark the selected ink with the note's own text colour.
+   (Colour dots get an accent ring per colour, see theme.rs.) */
+window.note .ink {
+  box-shadow: inset 0 0 0 1px var(--note-tint-strong);
+}
+window.note .ink:checked {
+  box-shadow: inset 0 0 0 1px var(--note-tint-strong), 0 0 0 2px var(--note-bg), 0 0 0 4px var(--note-fg);
 }
 .swatch-grid { padding: 6px; }
 

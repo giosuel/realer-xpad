@@ -10,7 +10,7 @@ use gtk::{gdk, gio, glib};
 use crate::app::{App, AppInner};
 use crate::canvas::Canvas;
 use crate::drawing::{Drawing, INK_COLORS, TOOLS, WIDTHS};
-use crate::editor::MarkdownEditor;
+use crate::editor::{MarkdownEditor, TEXT_INSET, TEXT_TOP};
 use crate::store::{COLORS, Note};
 use crate::theme::{PALETTE, swatch};
 
@@ -156,7 +156,7 @@ impl NoteWindow {
         let end = gtk::Box::new(gtk::Orientation::Horizontal, 2);
         let mode_btn = toggle("rx-draw-symbolic", "Draw (Ctrl+D)", true);
         end.append(&mode_btn);
-        let pin_btn = toggle("view-pin-symbolic", "Keep on top, on every workspace", true);
+        let pin_btn = toggle("rx-pin-symbolic", "Keep on top, on every workspace", true);
         pin_btn.set_visible(app.hypr().is_some());
         pin_btn.set_active(pinned);
         end.append(&pin_btn);
@@ -186,6 +186,8 @@ impl NoteWindow {
             .label("Start typing… Markdown works")
             .halign(gtk::Align::Start)
             .valign(gtk::Align::Start)
+            .margin_start(TEXT_INSET)
+            .margin_top(TEXT_TOP)
             .can_target(false)
             .build();
         placeholder.add_css_class("placeholder");

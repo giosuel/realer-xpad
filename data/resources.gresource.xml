@@ -7,6 +7,7 @@
     <file preprocess="xml-stripblanks">icons/scalable/actions/rx-eraser-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/rx-highlighter-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/rx-pen-symbolic.svg</file>
+    <file preprocess="xml-stripblanks">icons/scalable/actions/rx-pin-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/rx-text-symbolic.svg</file>
   </gresource>
 </gresources>

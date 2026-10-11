@@ -32,6 +32,6 @@ fi
 
 # No desktop portal in a bare session; don't let GTK/libadwaita wait on it.
 WAYLAND_DISPLAY=$(cat "$tmp/display")
-export WAYLAND_DISPLAY GDK_BACKEND=wayland ADW_DISABLE_PORTAL=1 GDK_DEBUG=no-portals
+export WAYLAND_DISPLAY GDK_BACKEND=wayland ADW_DISABLE_PORTAL=1 GDK_DEBUG=no-portals GTK_A11Y=none
 unset DISPLAY
 "$@"

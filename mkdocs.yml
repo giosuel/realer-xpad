@@ -1,0 +1,85 @@
+site_name: Realer Xpad
+site_description: Sticky notes for Linux that speak Markdown and let you doodle. Wayland-native, Hyprland-ready.
+site_author: giosuel
+site_url: https://giosuel.github.io/realer-xpad/
+repo_url: https://github.com/giosuel/realer-xpad
+repo_name: giosuel/realer-xpad
+edit_uri: edit/main/docs/
+copyright: Realer Xpad is free software under the AGPL-3.0 license · Powered by Rust 🦀
+
+exclude_docs: |
+  collage.png
+
+theme:
+  name: material
+  language: en
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  icon:
+    repo: fontawesome/brands/github
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    scheme: slate
+    primary: custom
+    accent: custom
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+
+extra_css:
+  - assets/extra.css
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/giosuel/realer-xpad
+      name: Realer Xpad on GitHub
+    - icon: fontawesome/solid/bug
+      link: https://github.com/giosuel/realer-xpad/issues
+      name: Report a bug
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Install: install.md
+  - Guide:
+      - Writing notes: guide/notes.md
+      - Drawing: guide/drawing.md
+      - Shortcuts & CLI: guide/shortcuts.md
+  - Hyprland: hyprland.md
+  - FAQ: faq.md
+  - Contributing: contributing.md

@@ -1,0 +1,23 @@
+[project]
+name = "realer-xpad"
+version = "0.1.0"
+description = "Sticky notes with Markdown and drawing for Wayland/Hyprland"
+requires-python = ">=3.11"
+dependencies = ["PyGObject>=3.46"]
+
+[project.scripts]
+realer-xpad = "realer_xpad.app:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["realer_xpad"]
+
+[tool.setuptools.package-data]
+realer_xpad = ["*.css"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -95,12 +95,12 @@ window.note popover separator { background-color: var(--note-tint-strong); }
 .swatch:checked, .ink:checked {
   box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12), 0 0 0 2px @accent_bg_color;
 }
-/* Inside a note, outline the dots so dark variants stay visible, and mark the
-   selection with the note's own text colour. */
-window.note .swatch, window.note .ink {
+/* Inside a note, mark the selected ink with the note's own text colour.
+   (Colour dots get an accent ring per colour, see theme.rs.) */
+window.note .ink {
   box-shadow: inset 0 0 0 1px var(--note-tint-strong);
 }
-window.note .swatch:checked, window.note .ink:checked {
+window.note .ink:checked {
   box-shadow: inset 0 0 0 1px var(--note-tint-strong), 0 0 0 2px var(--note-bg), 0 0 0 4px var(--note-fg);
 }
 .swatch-grid { padding: 6px; }

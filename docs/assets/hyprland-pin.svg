@@ -92,8 +92,8 @@
       <g transform="rotate(3 470 200)">
         <rect x="410" y="148" width="150" height="112" rx="12" fill="#fff4b0"/>
         <text x="426" y="176" font-size="14" font-weight="800" fill="#3d3510">Stand-up</text>
-        <g fill="none" stroke="#b07d00" stroke-width="1.8"><rect x="427" y="188" width="11" height="11" rx="3"/><rect x="427" y="208" width="11" height="11" rx="3"/></g>
-        <path d="M429.5 193.5 l2.5 2.5 4-5" fill="none" stroke="#b07d00" stroke-width="2" stroke-linecap="round"/>
+        <g fill="none" stroke="#a07000" stroke-width="1.8"><rect x="427" y="188" width="11" height="11" rx="3"/><rect x="427" y="208" width="11" height="11" rx="3"/></g>
+        <path d="M429.5 193.5 l2.5 2.5 4-5" fill="none" stroke="#a07000" stroke-width="2" stroke-linecap="round"/>
         <text x="445" y="198" font-size="12" fill="#3d3510" fill-opacity=".5" text-decoration="line-through">review PR</text>
         <text x="445" y="218" font-size="12" fill="#3d3510">ship v0.1</text>
         <rect x="427" y="230" width="90" height="6" rx="3" fill="#3d3510" fill-opacity=".12"/>

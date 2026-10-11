@@ -51,7 +51,7 @@ def test_env_data_dir(tmp_path, monkeypatch):
 
 def test_cli_help_and_version_need_no_display(capsys, monkeypatch):
     from realer_xpad import __version__
-    from realer_xpad.app import main
+    from realer_xpad.cli import main
 
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     monkeypatch.delenv("DISPLAY", raising=False)
@@ -59,3 +59,14 @@ def test_cli_help_and_version_need_no_display(capsys, monkeypatch):
     assert __version__ in capsys.readouterr().out
     assert main(["realer-xpad", "--help"]) == 0
     assert "toggle" in capsys.readouterr().out
+
+
+def test_cli_explains_missing_pygobject(capsys, monkeypatch):
+    import sys
+
+    from realer_xpad.cli import main
+
+    monkeypatch.setitem(sys.modules, "realer_xpad.app", None)  # import now fails
+    assert main(["realer-xpad"]) == 1
+    err = capsys.readouterr().err
+    assert "PyGObject" in err and "apt install" in err

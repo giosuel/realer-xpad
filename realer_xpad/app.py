@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING
 
 import gi
@@ -12,6 +11,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk
 
 from . import APP_ID, APP_NAME, __version__
+from .cli import COMMANDS, usage
 from .hypr import Hyprland
 from .store import Note, NoteStore
 from .theme import load_css
@@ -19,14 +19,6 @@ from .theme import load_css
 if TYPE_CHECKING:
     from .note_window import NoteWindow
 
-COMMANDS = {
-    "show": "Show all open notes (default)",
-    "new": "Create a new note",
-    "toggle": "Hide all notes, or show them if hidden",
-    "hide": "Hide all notes",
-    "manager": "Open the notes manager",
-    "quit": "Save everything and quit",
-}
 GEOMETRY_POLL_S = 3
 PLACE_RETRIES = 20
 
@@ -74,13 +66,13 @@ class App(Adw.Application):
         args = command_line.get_arguments()[1:]
         cmd = args[0] if args else "show"
         if cmd in ("-h", "--help", "help"):
-            command_line.print_literal(_usage())
+            command_line.print_literal(usage())
             return 0
         if cmd in ("-v", "--version"):
             command_line.print_literal(f"{APP_NAME} {__version__}\n")
             return 0
         if cmd not in COMMANDS:
-            command_line.printerr_literal(f"Unknown command: {cmd}\n\n{_usage()}")
+            command_line.printerr_literal(f"Unknown command: {cmd}\n\n{usage()}")
             return 1
         first = not self._started
         self._started = True
@@ -260,25 +252,3 @@ class App(Adw.Application):
                 self.store.save(win.note, touch=False)
         return GLib.SOURCE_CONTINUE
 
-
-def _usage() -> str:
-    lines = [f"Usage: realer-xpad [COMMAND]\n\n{APP_NAME} – sticky notes with Markdown and drawing.\n",
-             "Commands:"]
-    lines += [f"  {name:<9} {desc}" for name, desc in COMMANDS.items()]
-    return "\n".join(lines) + "\n"
-
-
-def main(argv: list[str] | None = None) -> int:
-    argv = argv if argv is not None else sys.argv
-    # Answer these without starting GTK, so they work without a display.
-    if len(argv) > 1 and argv[1] in ("-h", "--help", "help"):
-        print(_usage(), end="")
-        return 0
-    if len(argv) > 1 and argv[1] in ("-v", "--version"):
-        print(f"{APP_NAME} {__version__}")
-        return 0
-    return App().run(argv)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

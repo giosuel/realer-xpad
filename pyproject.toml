@@ -14,7 +14,7 @@ requires-python = ">=3.11"
 dependencies = ["PyGObject>=3.46"]
 
 [project.scripts]
-realer-xpad = "realer_xpad.app:main"
+realer-xpad = "realer_xpad.cli:main"
 
 [build-system]
 requires = ["setuptools>=77"]

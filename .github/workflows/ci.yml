@@ -19,8 +19,8 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - run: pip install ruff
@@ -48,11 +48,11 @@ jobs:
               sway dbus fonts-dejavu-core ca-certificates git
           else
             dnf install -y python3 python3-gobject gtk4 libadwaita python3-pytest \
-              sway dbus-daemon dejavu-sans-fonts git libcap
+              sway dbus-daemon dejavu-sans-fonts git libcap gobject-introspection
             # Fedora's sway carries file capabilities that containers don't grant.
             setcap -r /usr/bin/sway
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Unit tests
         run: python3 -m pytest -v
       - name: UI tests (headless Wayland)
@@ -66,8 +66,8 @@ jobs:
     needs: [lint, test]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - run: pip install build
@@ -82,7 +82,7 @@ jobs:
           python -m venv /tmp/venv
           /tmp/venv/bin/pip install --no-deps dist/*.whl
           /tmp/venv/bin/realer-xpad --version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -95,7 +95,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Tag must match package version
         run: |
           version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' realer_xpad/__init__.py)
@@ -103,7 +103,7 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME does not match __version__ $version"
             exit 1
           fi
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/

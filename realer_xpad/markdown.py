@@ -166,6 +166,17 @@ class Rendered:
     spans: list[Span]
     # (start, end) in rendered text -> index into Parsed.checkboxes
     checkboxes: list[tuple[int, int, int]]
+    # kept source runs: (src_start, src_end, rendered_start)
+    runs: list[tuple[int, int, int]] = field(default_factory=list)
+
+    def to_source(self, offset: int) -> int:
+        """Map a rendered offset back to the closest source offset."""
+        for s, e, o in self.runs:
+            if o <= offset < o + (e - s):
+                return s + offset - o
+            if offset < o:  # inside replaced marker text: snap to next run
+                return s
+        return self.runs[-1][1] if self.runs else 0
 
 
 def render(source: str, parsed: Parsed | None = None) -> Rendered:
@@ -214,7 +225,7 @@ def render(source: str, parsed: Parsed | None = None) -> Rendered:
         a, b = remap(sp.start, False), remap(sp.end, True)
         if b > a:
             spans.append(Span(sp.tag, a, b, sp.data))
-    return Rendered("".join(pieces), spans, rendered_boxes)
+    return Rendered("".join(pieces), spans, rendered_boxes, runs)
 
 
 def toggle_checkbox(source: str, checkbox: Checkbox) -> str:

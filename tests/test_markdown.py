@@ -110,3 +110,12 @@ def test_continue_list():
     assert continue_list("- ") == ""
     assert continue_list("- [ ] ") == ""
     assert continue_list("plain") is None
+
+
+def test_render_to_source_offsets():
+    src = "# Hi **there**"
+    r = render(src)
+    assert r.text == "Hi there"
+    assert src[r.to_source(0)] == "H"
+    assert src[r.to_source(3)] == "t"
+    assert r.to_source(len(r.text)) == src.index("**", 7)

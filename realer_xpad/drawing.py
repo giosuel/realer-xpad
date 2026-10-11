@@ -6,7 +6,8 @@ import math
 from dataclasses import dataclass, field
 
 TOOLS = ("pen", "highlighter", "eraser")
-INK_COLORS = ("#1e1e2e", "#e5484d", "#3e63dd", "#30a46c", "#f76b15", "#8e4ec6")
+# "ink" follows the note's text colour, so it stays readable in light and dark mode.
+INK_COLORS = ("ink", "#e5484d", "#3e63dd", "#30a46c", "#f76b15", "#8e4ec6")
 WIDTHS = (2.0, 4.0, 8.0)
 HIGHLIGHTER_SCALE = 4.0
 HIGHLIGHTER_ALPHA = 0.35

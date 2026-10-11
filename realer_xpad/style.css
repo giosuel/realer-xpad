@@ -1,0 +1,100 @@
+/* Sticky note windows */
+window.note {
+  background-color: var(--note-bg);
+  color: var(--note-fg);
+  border-radius: 14px;
+}
+
+window.note .note-header {
+  min-height: 34px;
+  padding: 3px 4px 0 4px;
+}
+
+window.note button.note-btn,
+window.note menubutton.note-btn > button {
+  min-width: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 999px;
+  color: var(--note-fg);
+  background: none;
+  transition: opacity 160ms ease-out, background 120ms;
+}
+window.note button.note-btn:hover,
+window.note menubutton.note-btn > button:hover { background: var(--note-tint); }
+window.note button.note-btn:active,
+window.note button.note-btn:checked,
+window.note menubutton.note-btn > button:checked { background: var(--note-tint-strong); }
+window.note button.note-btn:disabled { opacity: 0.35; }
+
+/* Header controls fade in while the pointer is over the note (or it has focus). */
+window.note .note-header .reveal { opacity: 0; }
+window.note.hover .note-header .reveal,
+window.note:not(:backdrop) .note-header .reveal { opacity: 1; }
+
+window.note textview,
+window.note textview text {
+  background: transparent;
+  color: var(--note-fg);
+  caret-color: var(--note-accent);
+}
+window.note textview text selection {
+  background-color: var(--note-tint-strong);
+  color: var(--note-fg);
+}
+window.note textview.note-text {
+  font-size: 11pt;
+  padding: 4px 16px 16px 16px;
+}
+
+window.note .placeholder {
+  color: var(--note-dim);
+  font-size: 11pt;
+  margin: 4px 16px;
+}
+
+window.note scrollbar { background: none; }
+window.note scrollbar slider { background-color: var(--note-tint-strong); }
+
+/* Floating drawing toolbar */
+window.note .draw-bar {
+  margin: 0 8px 10px 8px;
+  padding: 3px;
+  border-radius: 999px;
+  background-color: var(--note-bg);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.16), inset 0 0 0 1px var(--note-tint-strong);
+}
+window.note .draw-bar separator {
+  background: var(--note-tint-strong);
+  margin: 6px 3px;
+  min-width: 1px;
+}
+
+/* Colour dots (note colours + ink colours) */
+.swatch, .ink {
+  min-width: 22px;
+  min-height: 22px;
+  padding: 0;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12);
+}
+.swatch:checked, .ink:checked {
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12), 0 0 0 2px @accent_bg_color;
+}
+.swatch-grid { padding: 6px; }
+
+.ink-dot {
+  min-width: 14px;
+  min-height: 14px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15);
+}
+
+/* Notes manager */
+.note-card {
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.note-card .card-title { font-weight: 700; }
+.note-card .card-preview { opacity: 0.7; font-size: 0.9em; }
+.note-card .card-meta { opacity: 0.5; font-size: 0.8em; }

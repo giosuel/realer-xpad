@@ -10,9 +10,10 @@ src="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 bin_dir="$HOME/.local/bin"
 apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 desktop="$apps/ch.giosuel.RealerXpad.desktop"
+icon="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps/ch.giosuel.RealerXpad.svg"
 
 if [[ "${1:-}" == "--uninstall" ]]; then
-  rm -f "$bin_dir/realer-xpad" "$desktop"
+  rm -f "$bin_dir/realer-xpad" "$desktop" "$icon"
   echo "Removed launcher and desktop entry. Your notes in ~/.local/share/realer-xpad are untouched."
   exit 0
 fi
@@ -47,9 +48,10 @@ else
   exit 1
 fi
 
-mkdir -p "$bin_dir" "$apps"
+mkdir -p "$bin_dir" "$apps" "$(dirname "$icon")"
 install -m 755 "$binary" "$bin_dir/realer-xpad"
 install -m 644 "$src/extras/ch.giosuel.RealerXpad.desktop" "$desktop"
+install -m 644 "$src/data/icons/hicolor/scalable/apps/ch.giosuel.RealerXpad.svg" "$icon"
 
 echo "Installed: $bin_dir/realer-xpad ($("$bin_dir/realer-xpad" --version))"
 case ":$PATH:" in *":$bin_dir:"*) ;; *) echo "Note: add ~/.local/bin to your PATH.";; esac

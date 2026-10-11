@@ -90,6 +90,7 @@ impl App {
 
     fn startup(&self) {
         theme::load_css();
+        gtk::Window::set_default_icon_name(APP_ID);
         let store = self.0.initial_store.borrow_mut().take();
         let store = store.unwrap_or_else(|| NoteStore::new(default_data_dir()).expect("create data directory"));
         *self.0.hypr.borrow_mut() = Hyprland::detect();
@@ -365,7 +366,7 @@ impl App {
             .application_name(APP_NAME)
             .version(VERSION)
             .developer_name("giosuel")
-            .application_icon("rx-text-symbolic")
+            .application_icon(APP_ID)
             .license_type(gtk::License::Agpl30)
             .website("https://giosuel.github.io/realer-xpad/")
             .issue_url("https://github.com/giosuel/realer-xpad/issues")

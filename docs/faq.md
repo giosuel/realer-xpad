@@ -9,6 +9,11 @@ title: FAQ
     or PyGObject to install, about 35 MB less memory with a few notes open, and
     a compiler that catches whole classes of bugs before you ever see them.
 
+??? question "The AppImage doesn't start"
+    AppImages mount themselves with FUSE. If you see a FUSE error, install your
+    distro's `fuse` / `fuse3` package, or run it without mounting:
+    `./Realer_Xpad-*.AppImage --appimage-extract-and-run`.
+
 ??? question "Does it work on X11?"
     Realer Xpad is developed and tested on Wayland. GTK 4 also runs on X11, so
     it should work there too, but X11 isn't a target.

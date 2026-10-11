@@ -215,7 +215,7 @@ def render(source: str, parsed: Parsed | None = None) -> Rendered:
             if s <= offset < e or (is_end and offset == e):
                 return o + offset - s
         # Offset lies inside a removed marker: snap to the next kept run.
-        for s, e, o in runs:
+        for s, _e, o in runs:
             if s >= offset:
                 return o
         return out

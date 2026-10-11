@@ -47,3 +47,15 @@ def test_title():
 def test_env_data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("REALER_XPAD_DATA", str(tmp_path / "x"))
     assert NoteStore().dir == tmp_path / "x"
+
+
+def test_cli_help_and_version_need_no_display(capsys, monkeypatch):
+    from realer_xpad import __version__
+    from realer_xpad.app import main
+
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    monkeypatch.delenv("DISPLAY", raising=False)
+    assert main(["realer-xpad", "--version"]) == 0
+    assert __version__ in capsys.readouterr().out
+    assert main(["realer-xpad", "--help"]) == 0
+    assert "toggle" in capsys.readouterr().out

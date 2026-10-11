@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -82,7 +84,7 @@ def _scrolled(child: Gtk.Widget) -> Gtk.ScrolledWindow:
 class MarkdownEditor(Gtk.Stack):
     """Stack with an ``edit`` page (source, styled live) and a ``read`` page."""
 
-    __gsignals__ = {"changed": (GObject.SignalFlags.RUN_LAST, None, ())}
+    __gsignals__: ClassVar[dict] = {"changed": (GObject.SignalFlags.RUN_LAST, None, ())}
 
     def __init__(self):
         super().__init__(transition_type=Gtk.StackTransitionType.CROSSFADE, transition_duration=120)
@@ -283,7 +285,7 @@ class MarkdownEditor(Gtk.Stack):
         return True
 
     def _indent(self, outdent: bool) -> bool:
-        start, cursor = self._current_line()
+        start, _cursor = self._current_line()
         line_end = start.copy()
         line_end.forward_to_line_end()
         line = self.buffer.get_text(start, line_end, True)

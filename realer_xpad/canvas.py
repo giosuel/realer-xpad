@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from itertools import pairwise
+from typing import ClassVar
+
 import gi
 
 gi.require_version("Gtk", "4.0")
@@ -32,7 +35,7 @@ def _path(points) -> Gsk.Path:
     elif len(points) == 2:
         b.line_to(points[1][0], points[1][1])
     else:
-        for (ax, ay, _), (bx, by, _) in zip(points[1:], points[2:]):
+        for (ax, ay, _), (bx, by, _) in pairwise(points[1:]):
             b.quad_to(ax, ay, (ax + bx) / 2, (ay + by) / 2)
         b.line_to(points[-1][0], points[-1][1])
     return b.to_path()
@@ -60,7 +63,7 @@ def draw_stroke(snapshot: Gtk.Snapshot, stroke: Stroke, ink: Gdk.RGBA) -> None:
         snapshot.append_stroke(_path(pts), _stroke_style(width), color)
         return
     # Pressure varies: draw short segments with their own widths.
-    for a, b in zip(pts, pts[1:]):
+    for a, b in pairwise(pts):
         width = stroke.width * _pressure_scale((a[2] + b[2]) / 2)
         snapshot.append_stroke(_path([a, b]), _stroke_style(width), color)
 
@@ -71,7 +74,7 @@ def _pressure_scale(p: float) -> float:
 
 class DrawingCanvas(Gtk.Widget):
     __gtype_name__ = "RealerXpadCanvas"
-    __gsignals__ = {"changed": (GObject.SignalFlags.RUN_LAST, None, ())}
+    __gsignals__: ClassVar[dict] = {"changed": (GObject.SignalFlags.RUN_LAST, None, ())}
 
     def __init__(self, drawing: Drawing | None = None):
         super().__init__(hexpand=True, vexpand=True)

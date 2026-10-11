@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from typing import TYPE_CHECKING
 
 import gi
 
@@ -14,6 +15,9 @@ from . import APP_ID, APP_NAME, __version__
 from .hypr import Hyprland
 from .store import Note, NoteStore
 from .theme import load_css
+
+if TYPE_CHECKING:
+    from .note_window import NoteWindow
 
 COMMANDS = {
     "show": "Show all open notes (default)",
@@ -36,7 +40,7 @@ class App(Adw.Application):
         self._store = store
         self.store: NoteStore | None = None
         self.hypr: Hyprland | None = None
-        self.windows: dict[str, "NoteWindow"] = {}
+        self.windows: dict[str, NoteWindow] = {}
         self._notes: dict[str, Note] = {}
         self.manager = None
         self._started = False
@@ -265,7 +269,15 @@ def _usage() -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    return App().run(argv if argv is not None else sys.argv)
+    argv = argv if argv is not None else sys.argv
+    # Answer these without starting GTK, so they work without a display.
+    if len(argv) > 1 and argv[1] in ("-h", "--help", "help"):
+        print(_usage(), end="")
+        return 0
+    if len(argv) > 1 and argv[1] in ("-v", "--version"):
+        print(f"{APP_NAME} {__version__}")
+        return 0
+    return App().run(argv)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 330" width="840" height="330" role="img" aria-labelledby="t d">
+  <title id="t">Realer Xpad</title>
+  <desc id="d">Three sticky notes: a checklist ticking itself off, Markdown being typed, and a sketch drawing itself.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity=".28"/>
+    </filter>
+    <style>
+      text { font-family: "Inter", "Cantarell", system-ui, -apple-system, "Segoe UI", sans-serif; }
+      .mono { font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace; }
+      .note { transform-box: fill-box; transform-origin: center; animation: float 6s ease-in-out infinite; }
+      .n2 { animation-delay: -2s; }
+      .n3 { animation-delay: -4s; }
+      @keyframes float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -7px; } }
+
+      .tick { stroke-dasharray: 20; stroke-dashoffset: 20; animation: tick 8s ease-out infinite both; }
+      .t2 { animation-delay: .6s; }
+      .t3 { animation-delay: 1.2s; }
+      @keyframes tick { 0%, 10% { stroke-dashoffset: 20; } 18%, 88% { stroke-dashoffset: 0; } 96%, 100% { stroke-dashoffset: 20; } }
+      .done { animation: strike 8s ease-out infinite; opacity: 1; }
+      .d2 { animation-delay: .6s; }
+      .d3 { animation-delay: 1.2s; }
+      @keyframes strike { 0%, 12% { opacity: 1; } 20%, 88% { opacity: .45; } 96%, 100% { opacity: 1; } }
+      .strike { stroke-dasharray: 120; stroke-dashoffset: 120; animation: strikeline 8s ease-out infinite both; }
+      @keyframes strikeline { 0%, 12% { stroke-dashoffset: 120; } 20%, 88% { stroke-dashoffset: 0; } 96%, 100% { stroke-dashoffset: 120; } }
+
+      .line { opacity: 0; animation: line 8s ease-out infinite both; }
+      @keyframes line { 0% { opacity: 0; translate: -8px 0; } 6%, 88% { opacity: 1; translate: 0 0; } 96%, 100% { opacity: 0; translate: 0 0; } }
+
+      .draw { stroke-dasharray: 600; stroke-dashoffset: 600; animation: draw 8s ease-in-out infinite both; }
+      .dr2 { animation-delay: .9s; }
+      .dr3 { animation-delay: 1.6s; }
+      @keyframes draw { 0%, 5% { stroke-dashoffset: 600; } 35%, 88% { stroke-dashoffset: 0; } 97%, 100% { stroke-dashoffset: 600; } }
+
+      @media (prefers-reduced-motion: reduce) {
+        .note, .tick, .done, .strike, .line, .draw { animation: none; }
+        .tick, .strike, .draw { stroke-dashoffset: 0; }
+        .line { opacity: 1; }
+      }
+    </style>
+  </defs>
+
+  <!-- Checklist note -->
+  <g class="note n1" filter="url(#shadow)">
+    <g transform="rotate(-4 160 170)">
+      <rect x="40" y="50" width="240" height="240" rx="16" fill="#fff4b0"/>
+      <g fill="#3d3510" opacity=".35"><circle cx="64" cy="72" r="4"/><circle cx="78" cy="72" r="4"/><circle cx="92" cy="72" r="4"/></g>
+      <text x="64" y="118" font-size="26" font-weight="800" fill="#3d3510">Weekend</text>
+      <g font-size="17" fill="#3d3510">
+        <g class="done d1"><text x="94" y="157">Coffee beans</text></g>
+        <g class="done d2"><text x="94" y="190">Oat milk</text></g>
+        <g class="done d3"><text x="94" y="223">Sourdough</text></g>
+        <text x="94" y="256"><tspan font-weight="700">Basil</tspan> for pesto</text>
+      </g>
+      <g stroke="#3d3510" stroke-opacity=".55" stroke-width="1.6" fill="none">
+        <path class="strike" d="M94 151 h104"/>
+        <path class="strike t2" d="M94 184 h68" style="animation-delay:.6s"/>
+        <path class="strike t3" d="M94 217 h86" style="animation-delay:1.2s"/>
+      </g>
+      <g fill="none" stroke="#b07d00" stroke-width="2">
+        <rect x="66" y="142" width="16" height="16" rx="4"/>
+        <rect x="66" y="175" width="16" height="16" rx="4"/>
+        <rect x="66" y="208" width="16" height="16" rx="4"/>
+        <rect x="66" y="241" width="16" height="16" rx="4"/>
+      </g>
+      <g fill="none" stroke="#b07d00" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+        <path class="tick t1" d="M69 150 l4 4 7-8"/>
+        <path class="tick t2" d="M69 183 l4 4 7-8"/>
+        <path class="tick t3" d="M69 216 l4 4 7-8"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- Markdown note -->
+  <g class="note n2" filter="url(#shadow)">
+    <g transform="rotate(2 420 160)">
+      <rect x="300" y="30" width="250" height="260" rx="16" fill="#e6dcff"/>
+      <g fill="#2c1d57" opacity=".35"><circle cx="324" cy="52" r="4"/><circle cx="338" cy="52" r="4"/><circle cx="352" cy="52" r="4"/></g>
+      <g font-size="16" fill="#2c1d57">
+        <text class="line" style="animation-delay:.2s" x="324" y="96" font-size="23" font-weight="800">Ideas</text>
+        <text class="line" style="animation-delay:.6s" x="324" y="132"><tspan fill="#6d48d4" font-weight="700">•</tspan> Markdown that <tspan font-weight="700">renders</tspan></text>
+        <text class="line" style="animation-delay:1s" x="324" y="160"><tspan fill="#6d48d4" font-weight="700">•</tspan> Doodle with <tspan font-style="italic">a pen</tspan></text>
+        <text class="line" style="animation-delay:1.4s" x="324" y="188"><tspan fill="#6d48d4" font-weight="700">•</tspan> Pin on <tspan fill="#6d48d4" text-decoration="underline">Hyprland</tspan></text>
+        <g class="line" style="animation-delay:1.8s">
+          <rect x="324" y="206" width="204" height="30" rx="7" fill="#2c1d57" fill-opacity=".08"/>
+          <text x="334" y="226" font-size="13.5" class="mono">realer-xpad new</text>
+        </g>
+        <text class="line" style="animation-delay:2.2s" x="324" y="266" font-size="15" font-style="italic" fill-opacity=".7">▎ ship it ✦</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Sketch note -->
+  <g class="note n3" filter="url(#shadow)">
+    <g transform="rotate(-2 700 170)">
+      <rect x="570" y="50" width="240" height="240" rx="16" fill="#cdf3de"/>
+      <g fill="#0f3a26" opacity=".35"><circle cx="594" cy="72" r="4"/><circle cx="608" cy="72" r="4"/><circle cx="622" cy="72" r="4"/></g>
+      <path class="draw dr1" d="M598 220 q30 -18 60 0 t60 0 t60 0" fill="none" stroke="#f0c43c" stroke-opacity=".6" stroke-width="16" stroke-linecap="round"/>
+      <path class="draw dr2" d="M610 160 c10 -50 50 -60 70 -30 c20 -40 70 -30 66 10 c-2 30 -40 50 -68 74 c-30 -22 -66 -30 -68 -54 z"
+            fill="none" stroke="#e5484d" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <path class="draw dr3" d="M604 258 c20 -12 34 8 52 -2 s30 -16 48 -2 s32 10 52 -4"
+            fill="none" stroke="#3e63dd" stroke-width="3.5" stroke-linecap="round"/>
+    </g>
+  </g>
+</svg>

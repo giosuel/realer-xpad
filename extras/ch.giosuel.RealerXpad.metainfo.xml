@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>ch.giosuel.RealerXpad</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-only</project_license>
+  <name>Realer Xpad</name>
+  <summary>Sticky notes with Markdown and drawing</summary>
+  <developer id="ch.giosuel">
+    <name>giosuel</name>
+  </developer>
+  <description>
+    <p>
+      Quick little notes that stick to your desktop. Realer Xpad renders Markdown as you
+      type, turns task lists into clickable checkboxes and lets you draw on any note with
+      a pen, highlighter and eraser.
+    </p>
+    <ul>
+      <li>Live Markdown with a clean read view</li>
+      <li>Drawing with stylus pressure and undo</li>
+      <li>Seven note colours with light and dark variants</li>
+      <li>Wayland-native, with Hyprland integration for floating and pinning notes</li>
+      <li>Notes are plain Markdown files</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">ch.giosuel.RealerXpad.desktop</launchable>
+  <url type="homepage">https://giosuel.github.io/realer-xpad/</url>
+  <url type="bugtracker">https://github.com/giosuel/realer-xpad/issues</url>
+  <url type="vcs-browser">https://github.com/giosuel/realer-xpad</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Notes in dark mode next to the notes manager</caption>
+      <image>https://raw.githubusercontent.com/giosuel/realer-xpad/main/docs/collage-dark.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-10-11"/>
+  </releases>
+</component>

@@ -14,18 +14,31 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    container: debian:trixie
     steps:
+      - name: Install GTK, libadwaita and tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential pkg-config libgtk-4-dev libadwaita-1-dev \
+            curl ca-certificates git shellcheck
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: "3.13"
-      - run: pip install ruff
-      - name: Ruff
-        run: ruff check --output-format=github .
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: rustfmt
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
       - name: ShellCheck
         run: shellcheck install.sh tools/headless.sh
 
@@ -44,44 +57,57 @@ jobs:
           if command -v apt-get >/dev/null; then
             apt-get update
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-              python3 python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-pytest \
-              sway dbus fonts-dejavu-core ca-certificates git
+              build-essential pkg-config libgtk-4-dev libadwaita-1-dev \
+              sway dbus fonts-dejavu-core curl ca-certificates git
           else
-            dnf install -y python3 python3-gobject gtk4 libadwaita python3-pytest \
-              sway dbus-daemon dejavu-sans-fonts git libcap gobject-introspection
+            dnf install -y gcc pkgconf-pkg-config gtk4-devel libadwaita-devel \
+              sway dbus-daemon dejavu-sans-fonts libcap curl git
             # Fedora's sway carries file capabilities that containers don't grant.
             setcap -r /usr/bin/sway
           fi
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.distro }}
       - name: Unit tests
-        run: python3 -m pytest -v
+        run: cargo test --locked --lib --bins
       - name: UI tests (headless Wayland)
         run: |
           export XDG_RUNTIME_DIR=$(mktemp -d)
           chmod 700 "$XDG_RUNTIME_DIR"
-          dbus-run-session -- tools/headless.sh python3 -m pytest -v tests/test_ui.py
+          cargo build --locked --test ui
+          dbus-run-session -- tools/headless.sh cargo test --locked --test ui
 
   build:
     name: Build
     needs: [lint, test]
     runs-on: ubuntu-latest
+    # Built on Debian 13 (glibc 2.41, GTK 4.18) so the binary runs on current distros.
+    container: debian:trixie
     steps:
+      - name: Install GTK and libadwaita
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential pkg-config libgtk-4-dev libadwaita-1-dev curl ca-certificates git
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.13"
-      - run: pip install build
-      - run: python -m build
-      - name: Check package contents
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked
+      - name: Smoke test
+        run: ./target/release/realer-xpad --version
+      - name: Package
         run: |
-          unzip -l dist/*.whl | tee contents.txt
-          grep -q 'realer_xpad/style.css' contents.txt
-          test "$(grep -c '\.svg' contents.txt)" -ge 5
-      - name: Smoke test the installed wheel
-        run: |
-          python -m venv /tmp/venv
-          /tmp/venv/bin/pip install --no-deps dist/*.whl
-          /tmp/venv/bin/realer-xpad --version
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          name="realer-xpad-$version-x86_64-linux"
+          mkdir -p "dist/$name"
+          cp target/release/realer-xpad install.sh LICENSE README.md "dist/$name/"
+          cp -r extras "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          rm -rf "dist/$name"
+          (cd dist && sha256sum ./*.tar.gz > SHA256SUMS)
+          ls -l dist
       - uses: actions/upload-artifact@v7
         with:
           name: dist
@@ -96,11 +122,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
-      - name: Tag must match package version
+      - name: Tag must match the crate version
         run: |
-          version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' realer_xpad/__init__.py)
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match __version__ $version"
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $version"
             exit 1
           fi
       - uses: actions/download-artifact@v8

@@ -1,36 +1,56 @@
 #!/usr/bin/env bash
 # Install Realer Xpad for the current user (no root needed).
-#   ./install.sh            install launcher + desktop entry
-#   ./install.sh --uninstall
+#
+#   ./install.sh               build from source with cargo (or use the bundled
+#                              binary when run from a release archive)
+#   ./install.sh --uninstall   remove launcher and desktop entry
 set -euo pipefail
 
 src="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-bin="$HOME/.local/bin/realer-xpad"
+bin_dir="$HOME/.local/bin"
 apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 desktop="$apps/ch.giosuel.RealerXpad.desktop"
 
 if [[ "${1:-}" == "--uninstall" ]]; then
-  rm -f "$bin" "$desktop"
+  rm -f "$bin_dir/realer-xpad" "$desktop"
   echo "Removed launcher and desktop entry. Your notes in ~/.local/share/realer-xpad are untouched."
   exit 0
 fi
 
-python3 - <<'PY' || { echo; echo "Missing dependencies. On Debian/Ubuntu:"; echo "  sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1"; echo "On Arch:"; echo "  sudo pacman -S python-gobject gtk4 libadwaita"; exit 1; }
-import gi
-gi.require_version("Gtk", "4.0"); gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk, Gsk
-assert (Gtk.get_major_version(), Gtk.get_minor_version()) >= (4, 16), "GTK >= 4.16 required"
-assert hasattr(Gsk, "PathBuilder")
-PY
+deps_hint() {
+  cat >&2 <<'HINT'
 
-mkdir -p "$(dirname "$bin")" "$apps"
-cat > "$bin" <<SH
-#!/bin/sh
-PYTHONPATH="$src\${PYTHONPATH:+:\$PYTHONPATH}" exec python3 -m realer_xpad "\$@"
-SH
-chmod +x "$bin"
-cp "$src/extras/ch.giosuel.RealerXpad.desktop" "$desktop"
+Realer Xpad needs GTK >= 4.16 and libadwaita >= 1.5. To build it you also need
+Rust (https://rustup.rs) and the development packages:
 
-echo "Installed: $bin"
-case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo "Note: add ~/.local/bin to your PATH.";; esac
-echo "Hyprland users: see $src/extras/hyprland.conf for window rules and keybinds."
+  Debian / Ubuntu  sudo apt install libgtk-4-dev libadwaita-1-dev build-essential
+  Arch             sudo pacman -S gtk4 libadwaita base-devel
+  Fedora           sudo dnf install gtk4-devel libadwaita-devel gcc
+HINT
+}
+
+if [[ -x "$src/realer-xpad" ]]; then
+  binary="$src/realer-xpad"            # release archive
+elif command -v cargo >/dev/null; then
+  if ! pkg-config --atleast-version=4.16 gtk4 2>/dev/null ||
+     ! pkg-config --atleast-version=1.5 libadwaita-1 2>/dev/null; then
+    echo "error: GTK 4.16 / libadwaita 1.5 development files not found." >&2
+    deps_hint
+    exit 1
+  fi
+  echo "Building Realer Xpad (release)…"
+  cargo build --release --locked --manifest-path "$src/Cargo.toml"
+  binary="${CARGO_TARGET_DIR:-$src/target}/release/realer-xpad"
+else
+  echo "error: cargo not found, and no prebuilt binary next to this script." >&2
+  deps_hint
+  exit 1
+fi
+
+mkdir -p "$bin_dir" "$apps"
+install -m 755 "$binary" "$bin_dir/realer-xpad"
+install -m 644 "$src/extras/ch.giosuel.RealerXpad.desktop" "$desktop"
+
+echo "Installed: $bin_dir/realer-xpad ($("$bin_dir/realer-xpad" --version))"
+case ":$PATH:" in *":$bin_dir:"*) ;; *) echo "Note: add ~/.local/bin to your PATH.";; esac
+echo "Hyprland users: see extras/hyprland.conf for window rules and keybinds."

@@ -4,12 +4,13 @@
 
 # Realer Xpad
 
-**Sticky notes for Linux that speak Markdown and let you doodle.**
+**Sticky notes for Linux that speak Markdown and let you doodle.**<br>
+<sub>🦀 Powered by Rust</sub>
 
 [![CI](https://img.shields.io/github/actions/workflow/status/giosuel/realer-xpad/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white)](https://github.com/giosuel/realer-xpad/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/giosuel/realer-xpad?style=flat-square&color=8e4ec6&include_prereleases)](https://github.com/giosuel/realer-xpad/releases)
 [![License: AGPL-3.0](https://img.shields.io/github/license/giosuel/realer-xpad?style=flat-square&color=3e63dd)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-30a46c?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
+[![Powered by Rust](https://img.shields.io/badge/powered_by-Rust-dea584?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![GTK 4 + libadwaita](https://img.shields.io/badge/GTK_4-libadwaita-f76b15?style=flat-square&logo=gnome&logoColor=white)](https://gnome.pages.gitlab.gnome.org/libadwaita/)
 [![Wayland native](https://img.shields.io/badge/Wayland-native-e5484d?style=flat-square&logo=wayland&logoColor=white)](#)
 [![Hyprland ready](https://img.shields.io/badge/Hyprland-ready-58e1ff?style=flat-square&logo=hyprland&logoColor=white)](#hyprland)
@@ -59,8 +60,8 @@ Soft pastels by day and deep tones by night. Notes follow your system theme.
 </td>
 <td valign="top">
 
-**🪟 Wayland-native**<br>
-GTK 4 + libadwaita, no Xwayland. On **Hyprland**, notes float, remember where you put them, and can be pinned to every workspace.
+**🪟 Wayland-native, powered by Rust**<br>
+GTK 4 + libadwaita in a ~3 MB Rust binary, no Xwayland. On **Hyprland**, notes float, remember where you put them, and can be pinned to every workspace.
 
 </td>
 <td valign="top">
@@ -74,18 +75,22 @@ Every note is a `.md` file in `~/.local/share/realer-xpad`, so you can grep, syn
 
 ## 🚀 Install
 
-```sh
-# 1. dependencies (GTK ≥ 4.16, libadwaita ≥ 1.5)
-sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1   # Debian / Ubuntu
-sudo pacman -S python-gobject gtk4 libadwaita              # Arch
-sudo dnf install python3-gobject gtk4 libadwaita           # Fedora
+Realer Xpad is a single ~3 MB binary that only needs **GTK ≥ 4.16** and **libadwaita ≥ 1.5**, which current distros already ship.
 
-# 2. Realer Xpad
+**Prebuilt** – grab `realer-xpad-*-x86_64-linux.tar.gz` from the [latest release](https://github.com/giosuel/realer-xpad/releases), unpack it and run `./install.sh`.
+
+**From source** – with [Rust](https://rustup.rs) and the GTK development files:
+
+```sh
+sudo apt install libgtk-4-dev libadwaita-1-dev build-essential   # Debian / Ubuntu
+sudo pacman -S gtk4 libadwaita base-devel                         # Arch
+sudo dnf install gtk4-devel libadwaita-devel gcc                  # Fedora
+
 git clone https://github.com/giosuel/realer-xpad && cd realer-xpad
-./install.sh
+./install.sh        # cargo build --release, then installs to ~/.local/bin
 ```
 
-Then launch **Realer Xpad** from your app launcher, or run `realer-xpad`.
+Then launch **Realer Xpad** from your app launcher, or run `realer-xpad`. Notes from earlier versions are picked up as-is.
 
 ## 🌊 Hyprland
 
@@ -136,10 +141,11 @@ bind = SUPER SHIFT, N, exec, realer-xpad toggle  # hide / show all
 Bug reports and PRs are welcome. The test suite includes UI tests that run in a throwaway headless sway session:
 
 ```sh
-python3 -m venv --system-site-packages .venv && .venv/bin/pip install pytest
-tools/headless.sh .venv/bin/pytest
+cargo test                                   # unit tests
+tools/headless.sh cargo test --test ui       # UI tests on a pure-Wayland compositor
+cargo clippy --all-targets -- -D warnings
 ```
 
 <div align="center">
-<sub>Made with ☕ by <a href="https://github.com/giosuel">giosuel</a> · Licensed under <a href="LICENSE">AGPL-3.0</a></sub>
+<sub>Made with ☕ by <a href="https://github.com/giosuel">giosuel</a> · Powered by 🦀 Rust · Licensed under <a href="LICENSE">AGPL-3.0</a></sub>
 </div>

@@ -234,6 +234,40 @@ fn canvas_renders(c: &Ctx) {
     assert!(texture.width() > 0);
 }
 
+fn placeholder_lines_up_with_the_cursor(c: &Ctx) {
+    let win = c.new_window();
+    assert!(win.placeholder.is_visible() && !win.editor.reading());
+    pump(150);
+    // Where the cursor of the empty note is drawn vs. where the hint starts,
+    // both in window coordinates.
+    let view = &win.editor.edit_view;
+    let rect = view.iter_location(&view.buffer().start_iter());
+    let (bx, by) = view.buffer_to_window_coords(gtk::TextWindowType::Widget, rect.x(), rect.y());
+    let caret = view.compute_point(&win.window, &graphene::Point::new(bx as f32, by as f32)).unwrap();
+    let hint = win.placeholder.compute_point(&win.window, &graphene::Point::new(0.0, 0.0)).unwrap();
+    assert!(
+        (caret.x() - hint.x()).abs() <= 1.0 && (caret.y() - hint.y()).abs() <= 1.0,
+        "cursor at {:?}, placeholder at {:?}",
+        (caret.x(), caret.y()),
+        (hint.x(), hint.y())
+    );
+}
+
+fn bundled_icons_are_available(_: &Ctx) {
+    let theme = gtk::IconTheme::for_display(&gtk::gdk::Display::default().unwrap());
+    for icon in [
+        "rx-pen-symbolic",
+        "rx-highlighter-symbolic",
+        "rx-eraser-symbolic",
+        "rx-draw-symbolic",
+        "rx-text-symbolic",
+        "rx-pin-symbolic",
+        realer_xpad::APP_ID,
+    ] {
+        assert!(theme.has_icon(icon), "missing icon {icon}");
+    }
+}
+
 fn hide_and_show(c: &Ctx) {
     let win = c.new_window();
     win.hide_note();
@@ -342,6 +376,8 @@ fn main() {
         ("note_saved_in_draw_mode_reopens_in_draw_mode", note_saved_in_draw_mode_reopens_in_draw_mode),
         ("canvas_pointer_erasing", canvas_pointer_erasing),
         ("canvas_renders", canvas_renders),
+        ("placeholder_lines_up_with_the_cursor", placeholder_lines_up_with_the_cursor),
+        ("bundled_icons_are_available", bundled_icons_are_available),
         ("hide_and_show", hide_and_show),
         ("toggle_command_hides_and_restores", toggle_command_hides_and_restores),
         ("delete_empty_note_skips_confirmation", delete_empty_note_skips_confirmation),

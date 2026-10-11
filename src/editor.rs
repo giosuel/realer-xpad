@@ -9,7 +9,10 @@ use gtk::{gdk, glib, pango};
 use crate::markdown::{self, Parsed, Rendered};
 use crate::theme::{Swatch, rgba};
 
-const MARGIN: i32 = 16;
+/// Space between the note's edge and its text. The placeholder uses the same
+/// values, so the cursor of an empty note sits right where the hint starts.
+pub const TEXT_INSET: i32 = 32;
+pub const TEXT_TOP: i32 = 6;
 
 fn create_tags(buffer: &gtk::TextBuffer) {
     // Creation order is priority order: later tags win on conflicts.
@@ -22,7 +25,7 @@ fn create_tags(buffer: &gtk::TextBuffer) {
         tag("bold").weight(700).build(),
         tag("italic").style(pango::Style::Italic).build(),
         tag("strike").strikethrough(true).build(),
-        tag("quote").style(pango::Style::Italic).left_margin(MARGIN + 12).build(),
+        tag("quote").style(pango::Style::Italic).left_margin(TEXT_INSET + 12).build(),
         tag("done").strikethrough(true).build(),
         tag("code").family("monospace").scale(0.92).build(),
         tag("code_block").family("monospace").scale(0.92).build(),
@@ -73,10 +76,10 @@ fn apply_spans(buffer: &gtk::TextBuffer, spans: &[markdown::Span], markers: &[ma
 fn text_view(editable: bool) -> gtk::TextView {
     let view = gtk::TextView::builder()
         .wrap_mode(gtk::WrapMode::WordChar)
-        .left_margin(MARGIN)
-        .right_margin(MARGIN)
-        .top_margin(2)
-        .bottom_margin(MARGIN)
+        .left_margin(TEXT_INSET)
+        .right_margin(TEXT_INSET)
+        .top_margin(TEXT_TOP)
+        .bottom_margin(TEXT_INSET)
         .editable(editable)
         .cursor_visible(editable)
         .build();

@@ -10,7 +10,7 @@ Bug reports, ideas and pull requests are welcome on
 ## Development setup
 
 You need Rust 1.92+ and the GTK development files (see
-[Install → build from source](install.md#option-b-build-from-source)).
+[Install → build from source](install.md#option-c-build-from-source)).
 
 ```sh
 git clone https://github.com/giosuel/realer-xpad && cd realer-xpad
@@ -35,6 +35,12 @@ cargo fmt
 tests also check that nothing depends on X11. It needs `sway` installed. GTK
 must stay on a single thread, so `tests/ui.rs` uses its own small test harness
 instead of libtest. CI runs everything on Debian and Fedora.
+
+To build the AppImage locally (on Debian 13, like CI):
+
+```sh
+tools/build-appimage.sh dist
+```
 
 To regenerate the screenshots used in the docs:
 
@@ -78,5 +84,6 @@ Bump `version` in `Cargo.toml`, then push a matching tag:
 git tag v0.2.0 && git push origin v0.2.0
 ```
 
-CI checks that the tag matches the version, builds a release binary and
-publishes a GitHub release with a ready-to-install tarball.
+CI checks that the tag matches the version, then publishes a GitHub release
+with the AppImage (plus `.zsync` for delta updates), a binary tarball and
+`SHA256SUMS`.

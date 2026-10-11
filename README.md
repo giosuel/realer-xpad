@@ -75,9 +75,15 @@ Every note is a `.md` file in `~/.local/share/realer-xpad`, so you can grep, syn
 
 ## 🚀 Install
 
-Realer Xpad is a single ~3 MB binary that only needs **GTK ≥ 4.16** and **libadwaita ≥ 1.5**, which current distros already ship.
+**AppImage (easiest)** – download `Realer_Xpad-*-x86_64.AppImage` from the [latest release](https://github.com/giosuel/realer-xpad/releases), then:
 
-**Prebuilt** – grab `realer-xpad-*-x86_64-linux.tar.gz` from the [latest release](https://github.com/giosuel/realer-xpad/releases), unpack it and run `./install.sh`.
+```sh
+chmod +x Realer_Xpad-*-x86_64.AppImage && ./Realer_Xpad-*-x86_64.AppImage
+```
+
+It bundles GTK and libadwaita, so it also runs where your distro's GTK is too old (e.g. Ubuntu 24.04).
+
+**Binary** – `realer-xpad-*-x86_64-linux.tar.gz` from the same release is a single ~3 MB binary for systems with **GTK ≥ 4.16** and **libadwaita ≥ 1.5**; unpack it and run `./install.sh`.
 
 **From source** – with [Rust](https://rustup.rs) and the GTK development files:
 

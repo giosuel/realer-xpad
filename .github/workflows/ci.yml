@@ -104,19 +104,54 @@ jobs:
           mkdir -p "dist/$name"
           cp target/release/realer-xpad install.sh LICENSE README.md "dist/$name/"
           cp -r extras "dist/$name/"
+          mkdir -p "dist/$name/data/icons/hicolor/scalable/apps"
+          cp data/icons/hicolor/scalable/apps/ch.giosuel.RealerXpad.svg "dist/$name/data/icons/hicolor/scalable/apps/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           rm -rf "dist/$name"
-          (cd dist && sha256sum ./*.tar.gz > SHA256SUMS)
           ls -l dist
       - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
 
+  appimage:
+    name: AppImage
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential pkg-config libgtk-4-dev libadwaita-1-dev librsvg2-common \
+            adwaita-icon-theme file curl ca-certificates git sway dbus fonts-dejavu-core
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build AppImage
+        run: tools/build-appimage.sh dist
+      - name: Smoke test (native Wayland window on headless sway)
+        run: |
+          export XDG_RUNTIME_DIR=$(mktemp -d) APPIMAGE_EXTRACT_AND_RUN=1 REALER_XPAD_DATA=$(mktemp -d)
+          chmod 700 "$XDG_RUNTIME_DIR"
+          appimage=$(ls dist/*.AppImage)
+          "$appimage" --version
+          dbus-run-session -- tools/headless.sh bash -c '
+            "$0" & sleep 5
+            sock=$(ls "$XDG_RUNTIME_DIR"/sway-ipc.*.sock)
+            swaymsg -s "$sock" -t get_tree | grep -q "\"app_id\": *\"ch.giosuel.RealerXpad\"" ||
+              { echo "no native Wayland window with app_id ch.giosuel.RealerXpad" >&2; exit 1; }
+            "$0" quit' "$appimage"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: appimage
+          path: dist/
+
   release:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build]
+    needs: [build, appimage]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -131,8 +166,10 @@ jobs:
           fi
       - uses: actions/download-artifact@v8
         with:
-          name: dist
           path: dist/
+          merge-multiple: true  # tarball + AppImage (+ .zsync) side by side
+      - name: Checksums
+        run: (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

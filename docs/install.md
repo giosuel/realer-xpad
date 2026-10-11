@@ -8,24 +8,47 @@ Realer Xpad is a single, small **Rust** binary. The only things it needs at
 runtime are **GTK ≥ 4.16** and **libadwaita ≥ 1.5**, which every current
 desktop distro already ships.
 
-## Option A: prebuilt binary
+## Option A: AppImage (recommended)
 
-1. Download `realer-xpad-<version>-x86_64-linux.tar.gz` from the
+One file with GTK 4 and libadwaita bundled. Nothing to install, and it runs even
+where your distro's own GTK is too old.
+
+1. Download `Realer_Xpad-<version>-x86_64.AppImage` from the
    [latest release](https://github.com/giosuel/realer-xpad/releases).
-2. Unpack it and run the installer:
+2. Make it executable and run it:
 
     ```sh
-    tar xzf realer-xpad-*-x86_64-linux.tar.gz
-    cd realer-xpad-*-x86_64-linux
-    ./install.sh
+    chmod +x Realer_Xpad-*-x86_64.AppImage
+    ./Realer_Xpad-*-x86_64.AppImage
     ```
 
-!!! note
-    Release binaries are built on Debian 13. They run on distros from the same
-    generation or newer: Debian 13, Ubuntu 25.04+, Fedora 41+, Arch. On anything
-    older, build from source.
+Works on x86_64 distros with glibc 2.39 or newer: Ubuntu 24.04+, Debian 13,
+Fedora 40+, Arch and others. It runs natively on Wayland.
 
-## Option B: build from source
+!!! tip "Using it with Hyprland and keybinds"
+    Move it somewhere on your `PATH` under a short name, so the
+    [Hyprland config](hyprland.md) works as written:
+
+    ```sh
+    install -m 755 Realer_Xpad-*-x86_64.AppImage ~/.local/bin/realer-xpad
+    ```
+
+    To update later, download the new version and replace the file, or use
+    [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate), which
+    only downloads what changed.
+
+## Option B: prebuilt binary
+
+If your distro already has **GTK ≥ 4.16** and **libadwaita ≥ 1.5**, the plain
+binary is much smaller (~1 MB download):
+
+```sh
+tar xzf realer-xpad-*-x86_64-linux.tar.gz
+cd realer-xpad-*-x86_64-linux
+./install.sh
+```
+
+## Option C: build from source
 
 You need [Rust](https://rustup.rs) (1.92 or newer) and the GTK development files:
 

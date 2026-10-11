@@ -34,6 +34,16 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.1" date="2026-10-11">
+      <description>
+        <ul>
+          <li>The cursor of an empty note now lines up with the "Start typing" hint</li>
+          <li>Colour, ink and menu popovers take on the note's colour</li>
+          <li>Colour dots are ringed with their accent so every colour is easy to see</li>
+          <li>The pin button uses a bundled icon, so it shows with any icon theme</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-10-11"/>
   </releases>
 </component>

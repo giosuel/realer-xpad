@@ -1,0 +1,369 @@
+//! Widget-level tests. They need a Wayland/X display: run via
+//! `tools/headless.sh cargo test --test ui`. Without a display they are skipped.
+//!
+//! GTK may only be used from one thread, so this is a custom harness
+//! (`harness = false`) that runs every test sequentially on the main thread.
+
+use std::cell::RefCell;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::rc::Rc;
+use std::time::{Duration, Instant};
+
+use gtk::prelude::*;
+use gtk::{glib, graphene};
+use realer_xpad::app::App;
+use realer_xpad::drawing::Stroke;
+use realer_xpad::editor::MarkdownEditor;
+use realer_xpad::note_window::NoteWindow;
+use realer_xpad::store::{Note, NoteStore};
+
+/// Run the main loop for a little while.
+fn pump(ms: u64) {
+    let ctx = glib::MainContext::default();
+    let until = Instant::now() + Duration::from_millis(ms);
+    while Instant::now() < until {
+        ctx.iteration(false);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+fn tags_at(buffer: &gtk::TextBuffer, offset: i32) -> Vec<String> {
+    buffer.iter_at_offset(offset).tags().iter().filter_map(|t| t.name()).map(String::from).collect()
+}
+
+fn read_text(ed: &MarkdownEditor) -> String {
+    let buf = ed.read_view.buffer();
+    let (a, b) = buf.bounds();
+    buf.text(&a, &b, true).into()
+}
+
+/// Widget coordinates of the character at `offset` in a text view.
+fn coords(view: &gtk::TextView, offset: i32) -> (f64, f64) {
+    let rect = view.iter_location(&view.buffer().iter_at_offset(offset));
+    let (x, y) = view.buffer_to_window_coords(gtk::TextWindowType::Widget, rect.x() + 2, rect.y() + rect.height() / 2);
+    (x as f64, y as f64)
+}
+
+struct Ctx {
+    app: App,
+    _dir: tempfile::TempDir,
+}
+
+impl Ctx {
+    fn new(app: &App) -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        app.load_notes(NoteStore::new(dir.path()).unwrap());
+        Ctx { app: app.clone(), _dir: dir }
+    }
+
+    fn new_window(&self) -> NoteWindow {
+        self.app.new_note();
+        self.app.windows().last().unwrap().clone()
+    }
+}
+
+// -- editor ------------------------------------------------------------------
+
+fn editor_styles_source_live(_: &Ctx) {
+    let ed = MarkdownEditor::new();
+    ed.set_text("# Title\nsome **bold** text");
+    assert!(tags_at(&ed.buffer, 3).contains(&"h1".into()));
+    assert!(tags_at(&ed.buffer, 0).contains(&"marker".into()));
+    let bold = ed.text().find("bold").unwrap() as i32;
+    assert!(tags_at(&ed.buffer, bold).contains(&"bold".into()));
+}
+
+fn editor_restyles_after_typing(_: &Ctx) {
+    let ed = MarkdownEditor::new();
+    ed.set_text("hello");
+    ed.buffer.insert(&mut ed.buffer.start_iter(), "## ");
+    pump(50);
+    assert!(tags_at(&ed.buffer, 4).contains(&"h2".into()));
+}
+
+fn read_view_renders_clean_text(_: &Ctx) {
+    let ed = MarkdownEditor::new();
+    ed.set_text("- [ ] task\n**b**");
+    ed.show_read();
+    assert_eq!(read_text(&ed), "☐ task\nb");
+}
+
+fn toggle_checkbox_is_undoable(_: &Ctx) {
+    let ed = MarkdownEditor::new();
+    ed.set_text("- [ ] a");
+    ed.toggle_checkbox(0);
+    assert_eq!(ed.text(), "- [x] a");
+    ed.buffer.undo();
+    assert_eq!(ed.text(), "- [ ] a");
+}
+
+fn list_continuation_and_exit(_: &Ctx) {
+    let ed = MarkdownEditor::new();
+    ed.set_text("- one");
+    ed.buffer.place_cursor(&ed.buffer.end_iter());
+    assert!(ed.continue_list());
+    assert_eq!(ed.text(), "- one\n- ");
+    assert!(ed.continue_list()); // Enter on the empty item ends the list
+    assert_eq!(ed.text(), "- one\n");
+}
+
+fn wrap_selection_bold(_: &Ctx) {
+    let ed = MarkdownEditor::new();
+    ed.set_text("make this bold");
+    ed.buffer.select_range(&ed.buffer.iter_at_offset(10), &ed.buffer.iter_at_offset(14));
+    ed.wrap_selection("**");
+    assert_eq!(ed.text(), "make this **bold**");
+}
+
+fn indent_list_item(_: &Ctx) {
+    let ed = MarkdownEditor::new();
+    ed.set_text("- item");
+    ed.buffer.place_cursor(&ed.buffer.end_iter());
+    assert!(ed.indent(false));
+    assert_eq!(ed.text(), "  - item");
+    assert!(ed.indent(true));
+    assert_eq!(ed.text(), "- item");
+    ed.set_text("plain");
+    assert!(!ed.indent(false));
+}
+
+// -- note windows --------------------------------------------------------------
+
+fn new_note_is_saved_and_shown(c: &Ctx) {
+    let win = c.new_window();
+    pump(50);
+    assert!(win.window.is_visible());
+    assert_eq!(c.app.notes().len(), 1);
+    assert!(c.app.load_note_from_disk(&win.id()).is_some());
+}
+
+fn typing_saves_text(c: &Ctx) {
+    let win = c.new_window();
+    win.editor.buffer.set_text("# Saved");
+    win.save_now();
+    assert_eq!(c.app.load_note_from_disk(&win.id()).unwrap().text, "# Saved");
+    assert_eq!(win.window.title().unwrap(), "Saved");
+}
+
+fn color_change(c: &Ctx) {
+    let win = c.new_window();
+    win.select_color("mint");
+    assert_eq!(win.note.borrow().color, "mint");
+    assert!(win.window.has_css_class("mint") && !win.window.has_css_class("yellow"));
+}
+
+fn draw_mode_and_strokes(c: &Ctx) {
+    let win = c.new_window();
+    assert!(!win.canvas.area.can_target());
+    win.mode_btn.set_active(true);
+    assert_eq!(win.mode(), "draw");
+    assert!(win.canvas.area.can_target() && win.draw_bar.reveals_child());
+
+    win.canvas.begin(0.0, 0.0, 1.0, false);
+    win.canvas.update(20.0, 20.0, 0.5);
+    win.canvas.update(40.0, 0.0, 1.0);
+    win.canvas.end();
+    assert_eq!(win.note.borrow().strokes.len(), 1);
+    assert!(win.undo_btn.is_sensitive());
+    win.canvas.undo();
+    assert!(win.note.borrow().strokes.is_empty() && win.redo_btn.is_sensitive());
+
+    win.mode_btn.set_active(false);
+    assert_eq!(win.mode(), "text");
+    assert!(!win.canvas.area.can_target());
+}
+
+fn note_saved_in_draw_mode_reopens_in_draw_mode(c: &Ctx) {
+    let note = Note { mode: "draw".into(), ..Default::default() };
+    let id = note.id.clone();
+    let win = NoteWindow::new(&c.app, Rc::new(RefCell::new(note)));
+    assert!(win.mode_btn.is_active() && win.draw_bar.reveals_child() && win.canvas.area.can_target());
+    assert_eq!(win.id(), id);
+    win.window.destroy();
+}
+
+fn canvas_pointer_erasing(c: &Ctx) {
+    let win = c.new_window();
+    win.mode_btn.set_active(true);
+    let canvas = &win.canvas;
+    canvas.begin(10.0, 10.0, 1.0, false);
+    for i in 1..=10 {
+        canvas.update(10.0 + i as f64 * 8.0, 10.0 + i as f64 * 2.0, 1.0);
+    }
+    canvas.end();
+    assert_eq!(win.note.borrow().strokes[0].points.len(), 11);
+
+    win.select_tool("eraser");
+    canvas.begin(50.0, 52.0, 1.0, false); // far from the stroke: nothing erased
+    canvas.end();
+    assert_eq!(win.note.borrow().strokes.len(), 1);
+    canvas.begin(10.0, 10.0, 1.0, false);
+    canvas.update(40.0, 10.0, 1.0);
+    canvas.end();
+    assert!(win.note.borrow().strokes.is_empty());
+    canvas.undo();
+    assert_eq!(win.note.borrow().strokes.len(), 1);
+
+    win.select_tool("pen"); // the stylus' eraser tip erases with any tool
+    canvas.begin(10.0, 10.0, 1.0, true);
+    canvas.end();
+    assert!(win.note.borrow().strokes.is_empty());
+}
+
+fn canvas_renders(c: &Ctx) {
+    let win = c.new_window();
+    win.canvas.drawing.borrow_mut().add(Stroke::new(
+        "highlighter",
+        "#e5484d",
+        4.0,
+        vec![(10., 10., 1.), (100., 10., 1.)],
+    ));
+    win.canvas.drawing.borrow_mut().add(Stroke::new(
+        "pen",
+        "ink",
+        2.0,
+        vec![(10., 40., 0.2), (50., 60., 0.9), (90., 40., 0.5)],
+    ));
+    win.canvas.area.queue_draw();
+    pump(200);
+    let (w, h) = (win.window.width() as f32, win.window.height() as f32);
+    let snap = gtk::Snapshot::new();
+    gtk::WidgetPaintable::new(Some(&win.canvas.area)).snapshot(&snap, w as f64, h as f64);
+    let node = snap.to_node().expect("canvas produced render nodes");
+    let texture = win.window.renderer().unwrap().render_texture(node, Some(&graphene::Rect::new(0., 0., w, h)));
+    assert!(texture.width() > 0);
+}
+
+fn hide_and_show(c: &Ctx) {
+    let win = c.new_window();
+    win.hide_note();
+    assert!(!win.window.is_visible() && !win.note.borrow().visible);
+    assert!(!c.app.load_note_from_disk(&win.id()).unwrap().visible);
+    c.app.toggle_note(&win.id());
+    assert!(win.window.is_visible() && win.note.borrow().visible);
+}
+
+fn toggle_command_hides_and_restores(c: &Ctx) {
+    c.app.new_note();
+    c.app.new_note();
+    c.app.run_command("toggle", false);
+    assert!(!c.app.any_visible());
+    assert!(c.app.notes().iter().all(|n| n.borrow().visible)); // still "open", just hidden
+    c.app.run_command("toggle", false);
+    assert!(c.app.windows().iter().all(|w| w.window.is_visible()));
+}
+
+fn delete_empty_note_skips_confirmation(c: &Ctx) {
+    let win = c.new_window();
+    let id = win.id();
+    win.confirm_delete();
+    assert!(c.app.notes().is_empty());
+    assert!(c.app.store_dir().join("trash").join(format!("{id}.json")).exists());
+}
+
+fn existing_notes_open_on_show(c: &Ctx) {
+    let dir = tempfile::tempdir().unwrap();
+    let store = NoteStore::new(dir.path()).unwrap();
+    store.save(&mut Note { text: "open".into(), ..Default::default() }, true).unwrap();
+    store.save(&mut Note { text: "closed".into(), visible: false, ..Default::default() }, true).unwrap();
+    c.app.load_notes(store);
+    c.app.run_command("show", false);
+    let shown: Vec<String> =
+        c.app.windows().iter().filter(|w| w.window.is_visible()).map(|w| w.note.borrow().text.clone()).collect();
+    assert_eq!(shown, ["open"]);
+}
+
+fn read_view_checkbox_click(c: &Ctx) {
+    let win = c.new_window();
+    win.editor.set_text("- [ ] call mom\n- [ ] buy milk");
+    win.editor.show_read();
+    pump(200);
+    let offset = read_text(&win.editor).find("buy").map(|b| read_text(&win.editor)[..b].chars().count()).unwrap();
+    let (x, y) = coords(&win.editor.read_view, offset as i32 - 2); // the ☐ before "buy"
+    win.editor.read_click(x, y);
+    assert_eq!(win.editor.text(), "- [ ] call mom\n- [x] buy milk");
+    assert!(win.editor.reading()); // toggling does not leave the read view
+}
+
+fn read_view_text_click_enters_edit_at_position(c: &Ctx) {
+    let win = c.new_window();
+    win.editor.set_text("**hello** world");
+    win.editor.show_read();
+    pump(200);
+    let (x, y) = coords(&win.editor.read_view, 6); // "w"
+    win.editor.read_click(x, y);
+    assert!(!win.editor.reading());
+    let cursor = win.editor.buffer.iter_at_mark(&win.editor.buffer.get_insert()).offset() as usize;
+    assert_eq!(win.editor.text().chars().nth(cursor), Some('w'));
+}
+
+fn manager_lists_and_filters(c: &Ctx) {
+    let a = c.new_window();
+    let b = c.new_window();
+    a.editor.buffer.set_text("# Groceries\n- milk");
+    b.editor.buffer.set_text("# Work");
+    c.app.open_manager();
+    let m = c.app.manager().unwrap();
+    assert_eq!(m.row_ids().len(), 2);
+    m.search.set_text("milk");
+    m.refresh();
+    assert_eq!(m.row_ids(), [a.id()]);
+    m.search.set_text("nothing-matches");
+    m.refresh();
+    assert_eq!(m.stack.visible_child_name().unwrap(), "empty");
+    m.window.destroy();
+}
+
+/// A named UI test.
+type UiTest = (&'static str, fn(&Ctx));
+
+fn main() {
+    if std::env::var_os("WAYLAND_DISPLAY").is_none() && std::env::var_os("DISPLAY").is_none() {
+        println!("skipped: no display (run with tools/headless.sh)");
+        return;
+    }
+    // SAFETY: set before any other thread exists.
+    unsafe { std::env::set_var("REALER_XPAD_NO_HYPR", "1") };
+    let app = App::new(None, false, None);
+    app.register(); // runs startup on this thread
+
+    let tests: &[UiTest] = &[
+        ("editor_styles_source_live", editor_styles_source_live),
+        ("editor_restyles_after_typing", editor_restyles_after_typing),
+        ("read_view_renders_clean_text", read_view_renders_clean_text),
+        ("toggle_checkbox_is_undoable", toggle_checkbox_is_undoable),
+        ("list_continuation_and_exit", list_continuation_and_exit),
+        ("wrap_selection_bold", wrap_selection_bold),
+        ("indent_list_item", indent_list_item),
+        ("new_note_is_saved_and_shown", new_note_is_saved_and_shown),
+        ("typing_saves_text", typing_saves_text),
+        ("color_change", color_change),
+        ("draw_mode_and_strokes", draw_mode_and_strokes),
+        ("note_saved_in_draw_mode_reopens_in_draw_mode", note_saved_in_draw_mode_reopens_in_draw_mode),
+        ("canvas_pointer_erasing", canvas_pointer_erasing),
+        ("canvas_renders", canvas_renders),
+        ("hide_and_show", hide_and_show),
+        ("toggle_command_hides_and_restores", toggle_command_hides_and_restores),
+        ("delete_empty_note_skips_confirmation", delete_empty_note_skips_confirmation),
+        ("existing_notes_open_on_show", existing_notes_open_on_show),
+        ("read_view_checkbox_click", read_view_checkbox_click),
+        ("read_view_text_click_enters_edit_at_position", read_view_text_click_enters_edit_at_position),
+        ("manager_lists_and_filters", manager_lists_and_filters),
+    ];
+    let mut failed = Vec::new();
+    for (name, test) in tests {
+        let ctx = Ctx::new(&app);
+        let ok = catch_unwind(AssertUnwindSafe(|| test(&ctx))).is_ok();
+        println!("test {name} ... {}", if ok { "ok" } else { "FAILED" });
+        if !ok {
+            failed.push(*name);
+        }
+        drop(ctx);
+        pump(20);
+    }
+    println!("\nui tests: {} passed, {} failed", tests.len() - failed.len(), failed.len());
+    if !failed.is_empty() {
+        println!("failures: {}", failed.join(", "));
+        std::process::exit(1);
+    }
+}

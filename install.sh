@@ -19,7 +19,7 @@ python3 - <<'PY' || { echo; echo "Missing dependencies. On Debian/Ubuntu:"; echo
 import gi
 gi.require_version("Gtk", "4.0"); gi.require_version("Adw", "1")
 from gi.repository import Adw, Gtk, Gsk
-assert (Gtk.get_major_version(), Gtk.get_minor_version()) >= (4, 14), "GTK >= 4.14 required"
+assert (Gtk.get_major_version(), Gtk.get_minor_version()) >= (4, 16), "GTK >= 4.16 required"
 assert hasattr(Gsk, "PathBuilder")
 PY
 

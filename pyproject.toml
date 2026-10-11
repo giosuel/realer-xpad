@@ -1,23 +1,50 @@
 [project]
 name = "realer-xpad"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Sticky notes with Markdown and drawing for Wayland/Hyprland"
+readme = "README.md"
+license = "AGPL-3.0-only"
+authors = [{ name = "giosuel", email = "me@giosuel.ch" }]
+classifiers = [
+    "Environment :: X11 Applications :: GTK",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Office/Business",
+]
 requires-python = ">=3.11"
 dependencies = ["PyGObject>=3.46"]
 
 [project.scripts]
-realer-xpad = "realer_xpad.app:main"
+realer-xpad = "realer_xpad.cli:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["realer_xpad"]
+[tool.setuptools.packages.find]
+include = ["realer_xpad*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "realer_xpad.__version__" }
 
 [tool.setuptools.package-data]
-realer_xpad = ["*.css"]
+realer_xpad = ["*.css", "icons/hicolor/scalable/actions/*.svg"]
+
+[project.urls]
+Homepage = "https://github.com/giosuel/realer-xpad"
+Issues = "https://github.com/giosuel/realer-xpad/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = [
+    "E402",    # gi.require_version() must run before importing from gi.repository
+    "RUF001",  # ambiguous unicode: ☐ ☑ • – are intentional
+    "RUF002",
+]

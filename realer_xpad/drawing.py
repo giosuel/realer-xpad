@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from itertools import pairwise
 
 TOOLS = ("pen", "highlighter", "eraser")
 # "ink" follows the note's text colour, so it stays readable in light and dark mode.
@@ -25,7 +26,7 @@ class Stroke:
                 "points": [[round(x, 1), round(y, 1), round(p, 2)] for x, y, p in self.points]}
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Stroke":
+    def from_dict(cls, data: dict) -> Stroke:
         return cls(data.get("tool", "pen"), data.get("color", INK_COLORS[0]),
                    float(data.get("width", WIDTHS[1])),
                    [tuple(p) if len(p) == 3 else (p[0], p[1], 1.0) for p in data.get("points", [])])
@@ -39,7 +40,7 @@ class Stroke:
         pts = self.points
         if len(pts) == 1:
             return math.hypot(pts[0][0] - x, pts[0][1] - y) <= reach
-        return any(_seg_dist(x, y, a, b) <= reach for a, b in zip(pts, pts[1:]))
+        return any(_seg_dist(x, y, a, b) <= reach for a, b in pairwise(pts))
 
 
 def _seg_dist(px: float, py: float, a, b) -> float:
@@ -65,7 +66,7 @@ class Drawing:
         self._erasing: list[list[tuple[int, Stroke]]] | None = None
 
     @classmethod
-    def from_json(cls, data: list[dict]) -> "Drawing":
+    def from_json(cls, data: list[dict]) -> Drawing:
         return cls([Stroke.from_dict(d) for d in data])
 
     def to_json(self) -> list[dict]:
@@ -93,7 +94,7 @@ class Drawing:
         hits = [(i, s) for i, s in enumerate(self.strokes) if s.hit(x, y, radius)]
         if not hits:
             return False
-        for i, s in reversed(hits):
+        for i, _ in reversed(hits):
             del self.strokes[i]
         if self._erasing is not None:
             self._erasing.append(hits)
@@ -155,7 +156,7 @@ def smooth_points(points: list[tuple[float, float, float]]) -> list[tuple[float,
     if len(points) < 3:
         return list(points)
     out = [points[0]]
-    for a, b, c in zip(points, points[1:], points[2:]):
+    for a, b, c in zip(points, points[1:], points[2:], strict=False):
         out.append(((a[0] + 2 * b[0] + c[0]) / 4, (a[1] + 2 * b[1] + c[1]) / 4, b[2]))
     out.append(points[-1])
     return out

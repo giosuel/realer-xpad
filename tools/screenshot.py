@@ -12,6 +12,7 @@ import math
 import subprocess
 import sys
 import tempfile
+from itertools import pairwise
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -66,7 +67,7 @@ def box(x, y, w, h):
 def densify(corners, step=4.0):
     """Interpolate like real pointer input (which reports every few pixels)."""
     pts = []
-    for (ax, ay), (bx, by) in zip(corners, corners[1:]):
+    for (ax, ay), (bx, by) in pairwise(corners):
         n = max(1, int(math.hypot(bx - ax, by - ay) / step))
         pts += [[ax + (bx - ax) * i / n, ay + (by - ay) * i / n, 1.0] for i in range(n)]
     pts.append([*corners[-1], 1.0])

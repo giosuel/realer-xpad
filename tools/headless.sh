@@ -8,25 +8,30 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 tmp=$(mktemp -d)
 trap 'kill "$sway_pid" 2>/dev/null || true; rm -rf "$tmp"' EXIT
 
-cat > "$tmp/config" <<'EOF'
+# sway reports its socket name through an exec'd child, so there's no guessing.
+cat > "$tmp/config" <<EOF
 output HEADLESS-1 resolution 1600x1000 bg #303030 solid_color
 for_window [app_id="ch.giosuel.RealerXpad"] floating enable
 default_border none
+exec printenv WAYLAND_DISPLAY > "$tmp/display"
 EOF
 
-before=$(ls "$XDG_RUNTIME_DIR" | grep -E '^wayland-[0-9]+$' || true)
-WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman WAYLAND_DISPLAY= \
+WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman WAYLAND_DISPLAY='' \
   sway -c "$tmp/config" >"$tmp/sway.log" 2>&1 &
 sway_pid=$!
 
 for _ in $(seq 50); do
-  display=$(comm -13 <(echo "$before") <(ls "$XDG_RUNTIME_DIR" | grep -E '^wayland-[0-9]+$') | head -1)
-  [ -n "$display" ] && break
+  [ -s "$tmp/display" ] && break
   sleep 0.1
 done
-[ -n "${display:-}" ] || { echo "sway failed to start" >&2; cat "$tmp/sway.log" >&2; exit 1; }
+if [ ! -s "$tmp/display" ]; then
+  echo "sway failed to start" >&2
+  cat "$tmp/sway.log" >&2
+  exit 1
+fi
 
 # No desktop portal in a bare session; don't let GTK/libadwaita wait on it.
-export WAYLAND_DISPLAY="$display" GDK_BACKEND=wayland ADW_DISABLE_PORTAL=1 GDK_DEBUG=no-portals
+WAYLAND_DISPLAY=$(cat "$tmp/display")
+export WAYLAND_DISPLAY GDK_BACKEND=wayland ADW_DISABLE_PORTAL=1 GDK_DEBUG=no-portals
 unset DISPLAY
 "$@"

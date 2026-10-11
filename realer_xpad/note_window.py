@@ -202,7 +202,7 @@ class NoteWindow(Adw.ApplicationWindow):
 
         sizes = Gtk.Box(spacing=6, homogeneous=True)
         group = None
-        for width, label in zip(WIDTHS, ("Fine", "Medium", "Bold")):
+        for width, label in zip(WIDTHS, ("Fine", "Medium", "Bold"), strict=True):
             btn = Gtk.ToggleButton(label=label, group=group)
             group = group or btn
             btn.connect("toggled", lambda b, w=width: b.get_active() and setattr(self.canvas, "width", w))

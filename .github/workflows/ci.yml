@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install ruff
+      - name: Ruff
+        run: ruff check --output-format=github .
+      - name: ShellCheck
+        run: shellcheck install.sh tools/headless.sh
+
+  test:
+    name: Test (GTK ${{ matrix.distro }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Debian 13 ships GTK 4.18 / libadwaita 1.7; Fedora tracks the latest.
+        distro: ["debian:trixie", "fedora:latest"]
+    container: ${{ matrix.distro }}
+    steps:
+      - name: Install GTK, libadwaita and sway
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              python3 python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 python3-pytest \
+              sway dbus fonts-dejavu-core ca-certificates git
+          else
+            dnf install -y python3 python3-gobject gtk4 libadwaita python3-pytest \
+              sway dbus-daemon dejavu-sans-fonts git libcap gobject-introspection
+            # Fedora's sway carries file capabilities that containers don't grant.
+            setcap -r /usr/bin/sway
+          fi
+      - uses: actions/checkout@v7
+      - name: Unit tests
+        run: python3 -m pytest -v
+      - name: UI tests (headless Wayland)
+        run: |
+          export XDG_RUNTIME_DIR=$(mktemp -d)
+          chmod 700 "$XDG_RUNTIME_DIR"
+          dbus-run-session -- tools/headless.sh python3 -m pytest -v tests/test_ui.py
+
+  build:
+    name: Build
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install build
+      - run: python -m build
+      - name: Check package contents
+        run: |
+          unzip -l dist/*.whl | tee contents.txt
+          grep -q 'realer_xpad/style.css' contents.txt
+          test "$(grep -c '\.svg' contents.txt)" -ge 5
+      - name: Smoke test the installed wheel
+        run: |
+          python -m venv /tmp/venv
+          /tmp/venv/bin/pip install --no-deps dist/*.whl
+          /tmp/venv/bin/realer-xpad --version
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Tag must match package version
+        run: |
+          version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' realer_xpad/__init__.py)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match __version__ $version"
+            exit 1
+          fi
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "Realer Xpad ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            $([[ "$GITHUB_REF_NAME" == *-* ]] && echo --prerelease)

@@ -29,7 +29,7 @@ class Hyprland:
         self.socket_path = str(socket_path)
 
     @classmethod
-    def detect(cls) -> "Hyprland | None":
+    def detect(cls) -> Hyprland | None:
         if os.environ.get("REALER_XPAD_NO_HYPR"):
             return None
         path = _socket_path()

@@ -86,7 +86,7 @@ def demo_notes() -> list[Note]:
     return [
         Note(text=SHOPPING, color="yellow", width=280, height=250, created=1),
         Note(text=IDEAS, color="lavender", width=320, height=390, created=2),
-        Note(text=SKETCH, color="mint", width=290, height=300, mode="draw", strokes=sketch_strokes, created=3),
+        Note(text=SKETCH, color="mint", width=290, height=330, mode="draw", strokes=sketch_strokes, created=3),
         Note(text="", color="sky", width=260, height=200, created=4),
     ]
 

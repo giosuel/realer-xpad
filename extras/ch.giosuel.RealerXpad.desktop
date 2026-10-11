@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Application
+Name=Realer Xpad
+GenericName=Sticky Notes
+Comment=Sticky notes with Markdown and drawing
+Exec=realer-xpad
+Icon=accessories-text-editor
+Terminal=false
+Categories=Utility;GTK;
+Keywords=notes;sticky;markdown;draw;xpad;
+StartupNotify=false
+Actions=new-note;manager;
+
+[Desktop Action new-note]
+Name=New Note
+Exec=realer-xpad new
+
+[Desktop Action manager]
+Name=All Notes
+Exec=realer-xpad manager

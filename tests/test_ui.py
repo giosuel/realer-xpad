@@ -234,3 +234,75 @@ def test_manager_lists_and_filters(app):
     app.manager.search.set_text("nothing-matches")
     app.manager.refresh()
     assert app.manager.stack.get_visible_child_name() == "empty"
+
+
+class FakeGesture:
+    """Stands in for a Gtk gesture (no input devices in headless sessions)."""
+
+    def __init__(self, button=1, state=0):
+        self.button, self.state = button, state
+
+    def get_last_updated_sequence(self):
+        return None
+
+    def get_last_event(self, _seq):
+        return None
+
+    def get_current_button(self):
+        return self.button
+
+    def get_current_event_state(self):
+        return self.state
+
+
+def test_canvas_pointer_drawing_and_erasing(app):
+    app.new_note()
+    win = next(iter(app.windows.values()))
+    win.mode_btn.set_active(True)
+    canvas, g = win.canvas, FakeGesture()
+    canvas._on_begin(g, 10, 10)
+    for i in range(1, 11):
+        canvas._on_update(g, i * 8, i * 2)
+    canvas._on_end(g, 80, 20)
+    assert len(win.note.strokes) == 1
+    assert len(win.note.strokes[0]["points"]) == 11
+
+    win.tool_buttons["eraser"].set_active(True)
+    canvas._on_begin(g, 50, 52)  # far from the stroke: nothing erased
+    canvas._on_end(g, 0, 0)
+    assert len(win.note.strokes) == 1
+    canvas._on_begin(g, 10, 10)
+    canvas._on_update(g, 40, 10)
+    canvas._on_end(g, 40, 10)
+    assert win.note.strokes == []
+    win.canvas.undo()
+    assert len(win.note.strokes) == 1
+
+
+def test_read_view_checkbox_click(app):
+    app.new_note()
+    win = next(iter(app.windows.values()))
+    win.editor.set_text("- [ ] call mom\n- [ ] buy milk")
+    win.editor.show_read()
+    pump(200)
+    view = win.editor.read_view
+    rect = view.get_iter_location(view.get_buffer().get_iter_at_line(1)[1])
+    x, y = view.buffer_to_window_coords(Gtk.TextWindowType.WIDGET, rect.x + 2, rect.y + rect.height // 2)
+    win.editor._on_read_click(FakeGesture(), 1, x, y)
+    assert win.editor.text == "- [ ] call mom\n- [x] buy milk"
+    assert win.editor.reading  # toggling does not leave the read view
+
+
+def test_read_view_text_click_enters_edit_at_position(app):
+    app.new_note()
+    win = next(iter(app.windows.values()))
+    win.editor.set_text("**hello** world")
+    win.editor.show_read()
+    pump(200)
+    view = win.editor.read_view
+    rect = view.get_iter_location(view.get_buffer().get_iter_at_offset(6))  # "w"
+    x, y = view.buffer_to_window_coords(Gtk.TextWindowType.WIDGET, rect.x + 1, rect.y + rect.height // 2)
+    win.editor._on_read_click(FakeGesture(), 1, x, y)
+    assert not win.editor.reading
+    cursor = win.editor.buffer.get_iter_at_mark(win.editor.buffer.get_insert()).get_offset()
+    assert win.editor.text[cursor] == "w"

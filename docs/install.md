@@ -62,6 +62,12 @@ flatpak run ch.giosuel.RealerXpad
 The sandbox keeps its notes in `~/.var/app/ch.giosuel.RealerXpad/data/realer-xpad`,
 separate from a native install.
 
+!!! warning "On Hyprland, the sandbox is mostly symbolic"
+    To float and pin notes, the Flatpak may use Hyprland's IPC socket, and that
+    socket accepts any command, including starting programs. To keep the
+    sandbox tight at the cost of tiled notes, run
+    `flatpak override --user --nofilesystem=xdg-run/hypr ch.giosuel.RealerXpad`.
+
 ## Option B: prebuilt binary
 
 If your distro already has **GTK ≥ 4.16** and **libadwaita ≥ 1.5**, the plain

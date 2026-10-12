@@ -4,6 +4,18 @@ title: FAQ
 
 # FAQ
 
+??? question "Can I bring my notes over from xpad?"
+    Yes. When Realer Xpad starts for the first time and finds notes in
+    `~/.config/xpad`, it offers to import them. You can also import any time
+    with **Import from xpad…** in the notes manager's menu, or
+    `realer-xpad import-xpad`.
+
+    Each note keeps its text, size, and whether it's sticky (which becomes
+    pinned) or hidden. Its colour becomes the closest of the seven note colours.
+    Window positions aren't kept, because xpad's are X11 screen coordinates.
+    Empty notes are skipped, and importing again only brings in notes that are
+    new since last time. xpad's own files are never changed.
+
 ??? question "Why Rust?"
     Because it's *realer*. More seriously: a single ~3 MB binary with no Python
     or PyGObject to install, about 35 MB less memory with a few notes open, and

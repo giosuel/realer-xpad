@@ -40,6 +40,7 @@ keys in any compositor.
 | `realer-xpad toggle` | Hide all notes, or show them if hidden |
 | `realer-xpad hide` | Hide all notes |
 | `realer-xpad manager` | Open the notes manager |
+| `realer-xpad import-xpad` | Import notes from xpad |
 | `realer-xpad quit` | Save everything and quit |
 | `realer-xpad --version` | Print the version |
 

@@ -102,6 +102,8 @@ git clone https://github.com/giosuel/realer-xpad && cd realer-xpad
 
 Then launch **Realer Xpad** from your app launcher, or run `realer-xpad`. Notes from earlier versions are picked up as-is.
 
+**Coming from xpad?** On first start, Realer Xpad offers to bring your xpad notes over, with their text, colours and sizes. xpad itself stays untouched. Later imports: **Import from xpad…** in the notes manager, or `realer-xpad import-xpad`.
+
 ## 🌊 Hyprland
 
 Add the rules from [`extras/hyprland.conf`](extras/hyprland.conf) so notes float instead of tiling:
@@ -142,6 +144,7 @@ bind = SUPER SHIFT, N, exec, realer-xpad toggle  # hide / show all
 | `realer-xpad new` | New note |
 | `realer-xpad toggle` | Hide / show all notes |
 | `realer-xpad manager` | Notes manager |
+| `realer-xpad import-xpad` | Import notes from xpad |
 | `realer-xpad quit` | Save and quit |
 
 </details>

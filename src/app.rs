@@ -2,6 +2,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -12,7 +13,7 @@ use crate::hypr::Hyprland;
 use crate::manager::Manager;
 use crate::note_window::NoteWindow;
 use crate::store::{Note, NoteStore, default_data_dir};
-use crate::{APP_ID, APP_NAME, VERSION, cli, theme};
+use crate::{APP_ID, APP_NAME, VERSION, cli, theme, xpad};
 
 const GEOMETRY_POLL_S: u32 = 3;
 const PLACE_RETRIES: u32 = 20;
@@ -29,6 +30,8 @@ pub struct AppInner {
     windows: RefCell<HashMap<String, NoteWindow>>,
     manager: RefCell<Option<Manager>>,
     started: Cell<bool>,
+    /// Where to look for xpad notes to import.
+    xpad_dir: RefCell<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -54,6 +57,7 @@ impl App {
             windows: RefCell::default(),
             manager: RefCell::default(),
             started: Cell::new(false),
+            xpad_dir: RefCell::new(xpad::default_dir()),
         }));
         let weak = Rc::downgrade(&this.0);
         this.0.app.connect_startup(move |_| {
@@ -96,11 +100,12 @@ impl App {
         *self.0.hypr.borrow_mut() = Hyprland::detect();
         self.load_notes(store);
 
-        let actions: [ActionEntry; 7] = [
+        let actions: [ActionEntry; 8] = [
             ("new-note", App::new_note, Some("<Ctrl>n")),
             ("show-all", App::show_all, None),
             ("hide-all", App::hide_all, None),
             ("manager", App::open_manager, None),
+            ("import-xpad", App::import_xpad_and_report, None),
             ("open-folder", App::open_folder, None),
             ("about", App::about, None),
             ("quit", App::quit_app, Some("<Ctrl>q")),
@@ -149,6 +154,21 @@ impl App {
             _ => {}
         }
         let first = !self.0.started.replace(true);
+        if cmd == "import-xpad" {
+            let dir = self.xpad_dir();
+            match self.import_xpad() {
+                Ok(n) => {
+                    let notes = if n == 1 { "note" } else { "notes" };
+                    cmdline.print_literal(&format!("Imported {n} {notes} from {}\n", dir.display()));
+                }
+                Err(err) => {
+                    cmdline.printerr_literal(&format!("Could not import from {}: {err}\n", dir.display()));
+                    return glib::ExitCode::FAILURE;
+                }
+            }
+            self.run_command("show", first);
+            return glib::ExitCode::SUCCESS;
+        }
         self.run_command(cmd, first);
         glib::ExitCode::SUCCESS
     }
@@ -165,7 +185,9 @@ impl App {
                 self.show_all();
                 if !self.any_visible() {
                     if self.0.notes.borrow().is_empty() {
-                        self.new_note();
+                        if !self.offer_xpad_import() {
+                            self.new_note();
+                        }
                     } else {
                         self.open_manager();
                     }
@@ -326,28 +348,120 @@ impl App {
     }
 
     fn changed(&self) {
-        let manager = self.0.manager.borrow().clone();
-        if let Some(m) = manager {
+        if let Some(m) = self.manager() {
             m.refresh();
         }
     }
 
+    // -- xpad import ----------------------------------------------------
+
+    pub fn xpad_dir(&self) -> PathBuf {
+        self.0.xpad_dir.borrow().clone()
+    }
+
+    /// Look for xpad notes somewhere else. Used by tests.
+    pub fn set_xpad_dir(&self, dir: &Path) {
+        *self.0.xpad_dir.borrow_mut() = dir.to_path_buf();
+    }
+
+    /// Copy new xpad notes into the store and show the visible ones.
+    /// Returns how many notes were imported.
+    pub fn import_xpad(&self) -> std::io::Result<usize> {
+        let notes = match self.0.store.borrow().as_ref() {
+            Some(store) => xpad::import(store, &self.xpad_dir())?,
+            None => return Ok(0),
+        };
+        for note in &notes {
+            self.0.notes.borrow_mut().insert(note.id.clone(), Rc::new(RefCell::new(note.clone())));
+        }
+        for note in notes.iter().filter(|n| n.visible) {
+            if let Some(win) = self.window_for(&note.id) {
+                win.show_note();
+            }
+        }
+        self.changed();
+        Ok(notes.len())
+    }
+
+    /// The "Import from xpad" menu entry: import, then say what happened.
+    fn import_xpad_and_report(&self) {
+        let (heading, body) = match self.import_xpad() {
+            Ok(0) => {
+                ("No New xpad Notes".to_string(), format!("Nothing to import from {}.", self.xpad_dir().display()))
+            }
+            Ok(n) => (
+                format!("Imported {n} Note{}", if n == 1 { "" } else { "s" }),
+                "Your xpad notes are copied over. xpad itself is unchanged.".into(),
+            ),
+            Err(err) => ("Import Failed".into(), err.to_string()),
+        };
+        let dialog = adw::AlertDialog::new(Some(&heading), Some(&body));
+        dialog.add_response("ok", "OK");
+        dialog.present(self.dialog_parent().as_ref());
+    }
+
+    /// On a first start without notes, offer to import xpad's notes (once).
+    /// Returns whether the offer was shown.
+    pub fn offer_xpad_import(&self) -> bool {
+        let count = match self.0.store.borrow().as_ref() {
+            Some(store) if !xpad::was_offered(store) => xpad::pending(store, &self.xpad_dir()).len(),
+            _ => 0,
+        };
+        if count == 0 {
+            return false;
+        }
+        if let Some(store) = self.0.store.borrow().as_ref() {
+            let _ = xpad::mark_offered(store);
+        }
+        let plural = if count == 1 { "" } else { "s" };
+        let dialog = adw::AlertDialog::new(
+            Some("Import Your xpad Notes?"),
+            Some(&format!(
+                "Found {count} note{plural} from xpad. They are copied over with their colours and sizes; xpad itself stays unchanged."
+            )),
+        );
+        let import_label = format!("Import {count} Note{plural}");
+        dialog.add_responses(&[("skip", "Start Fresh"), ("import", import_label.as_str())]);
+        dialog.set_response_appearance("import", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("import"));
+        dialog.set_close_response("skip");
+        let weak = Rc::downgrade(&self.0);
+        dialog.connect_response(None, move |_, response| {
+            let Some(app) = weak.upgrade().map(App) else { return };
+            let imported = response == "import" && app.import_xpad().is_ok_and(|n| n > 0);
+            if !imported {
+                app.new_note();
+            }
+        });
+        // Over the (empty) notes manager, which then lists the imported notes.
+        self.open_manager();
+        dialog.present(self.dialog_parent().as_ref());
+        true
+    }
+
+    fn dialog_parent(&self) -> Option<gtk::Widget> {
+        self.manager()
+            .map(|m| m.window.clone().upcast::<gtk::Widget>())
+            .or_else(|| self.0.app.active_window().map(|w| w.upcast::<gtk::Widget>()))
+    }
+
     // -- manager & misc -------------------------------------------------
 
+    /// The open notes manager. Closing its window destroys it, which detaches it
+    /// from the application; our own reference would otherwise keep it around.
     pub fn manager(&self) -> Option<Manager> {
-        self.0.manager.borrow().clone()
+        let manager = self.0.manager.borrow().clone()?;
+        if manager.window.application().is_none() {
+            self.0.manager.borrow_mut().take();
+            return None;
+        }
+        Some(manager)
     }
 
     pub fn open_manager(&self) {
         let existing = self.manager();
         let manager = existing.unwrap_or_else(|| {
             let m = Manager::new(self);
-            let weak = Rc::downgrade(&self.0);
-            m.window.connect_destroy(move |_| {
-                if let Some(inner) = weak.upgrade() {
-                    inner.manager.borrow_mut().take();
-                }
-            });
             *self.0.manager.borrow_mut() = Some(m.clone());
             m
         });
@@ -372,11 +486,7 @@ impl App {
             .issue_url("https://github.com/giosuel/realer-xpad/issues")
             .comments("Sticky notes with Markdown and drawing.\nPowered by Rust 🦀")
             .build();
-        let parent = self
-            .manager()
-            .map(|m| m.window.clone().upcast::<gtk::Widget>())
-            .or_else(|| self.0.app.active_window().map(|w| w.upcast::<gtk::Widget>()));
-        about.present(parent.as_ref());
+        about.present(self.dialog_parent().as_ref());
     }
 
     // -- Hyprland -------------------------------------------------------

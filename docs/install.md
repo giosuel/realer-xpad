@@ -47,6 +47,21 @@ Fedora 40+, Arch and others. It runs natively on Wayland.
     [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate), which
     only downloads what changed.
 
+## Flatpak
+
+[Releases](https://github.com/giosuel/realer-xpad/releases) from 0.1.2 on include
+a Flatpak bundle. It runs sandboxed on the GNOME 51 runtime, which Flatpak fetches
+from Flathub:
+
+```sh
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user Realer_Xpad-*-x86_64.flatpak
+flatpak run ch.giosuel.RealerXpad
+```
+
+The sandbox keeps its notes in `~/.var/app/ch.giosuel.RealerXpad/data/realer-xpad`,
+separate from a native install.
+
 ## Option B: prebuilt binary
 
 If your distro already has **GTK ≥ 4.16** and **libadwaita ≥ 1.5**, the plain

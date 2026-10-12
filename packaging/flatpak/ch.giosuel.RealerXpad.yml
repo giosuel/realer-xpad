@@ -1,0 +1,35 @@
+id: ch.giosuel.RealerXpad
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: realer-xpad
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  # Hyprland's IPC socket, used to float, size, place and pin note windows.
+  - --filesystem=xdg-run/hypr:ro
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+modules:
+  - name: realer-xpad
+    buildsystem: simple
+    build-options:
+      env:
+        CARGO_HOME: /run/build/realer-xpad/cargo
+        CARGO_NET_OFFLINE: 'true'
+    build-commands:
+      - cargo build --release --locked --offline
+      - install -Dm755 target/release/realer-xpad -t /app/bin
+      - install -Dm644 extras/ch.giosuel.RealerXpad.desktop -t /app/share/applications
+      - install -Dm644 extras/ch.giosuel.RealerXpad.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 data/icons/hicolor/scalable/apps/ch.giosuel.RealerXpad.svg -t /app/share/icons/hicolor/scalable/apps
+    sources:
+      # flathub-manifest.sh swaps this for the git tag of a release.
+      - type: dir
+        path: ../..
+        skip: [target, dist, site, .flatpak-builder]
+      - cargo-sources.json

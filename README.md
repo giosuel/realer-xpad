@@ -85,6 +85,8 @@ chmod +x Realer_Xpad-*-x86_64.AppImage && ./Realer_Xpad-*-x86_64.AppImage
 
 It bundles GTK and libadwaita, so it also runs where your distro's GTK is too old (e.g. Ubuntu 24.04).
 
+**Flatpak** – `Realer_Xpad-*-x86_64.flatpak` from the same release (0.1.2 and later): `flatpak install --user Realer_Xpad-*-x86_64.flatpak`.
+
 **Binary** – `realer-xpad-*-x86_64-linux.tar.gz` from the same release is a single ~3 MB binary for systems with **GTK ≥ 4.16** and **libadwaita ≥ 1.5**; unpack it and run `./install.sh`.
 
 **From source** – with [Rust](https://rustup.rs) and the GTK development files:

@@ -143,18 +143,26 @@ impl App {
     fn command_line(&self, cmdline: &gio::ApplicationCommandLine) -> glib::ExitCode {
         let args: Vec<String> = cmdline.arguments().iter().skip(1).map(|a| a.to_string_lossy().into_owned()).collect();
         let cmd = args.first().map_or("show", String::as_str);
+        // Answered without starting the app: if this process just became the
+        // running instance for it, don't stay in the background afterwards.
+        let answer = |code| {
+            if !cmdline.is_remote() {
+                self.quit_app();
+            }
+            code
+        };
         match cmd {
             "-h" | "--help" | "help" => {
                 cmdline.print_literal(&cli::usage());
-                return glib::ExitCode::SUCCESS;
+                return answer(glib::ExitCode::SUCCESS);
             }
             "-v" | "--version" => {
                 cmdline.print_literal(&format!("{APP_NAME} {VERSION}\n"));
-                return glib::ExitCode::SUCCESS;
+                return answer(glib::ExitCode::SUCCESS);
             }
             _ if !cli::COMMANDS.iter().any(|(c, _)| *c == cmd) => {
                 cmdline.printerr_literal(&format!("Unknown command: {cmd}\n\n{}", cli::usage()));
-                return glib::ExitCode::FAILURE;
+                return answer(glib::ExitCode::FAILURE);
             }
             _ => {}
         }
@@ -314,12 +322,19 @@ impl App {
         self.changed();
     }
 
+    /// Hide the note if it's on screen, otherwise show it.
     pub fn toggle_note(&self, id: &str) {
-        let visible = self.0.notes.borrow().get(id).is_some_and(|n| n.borrow().visible);
+        let shown = self.is_shown(id);
         if let Some(win) = self.window_for(id) {
-            if visible { win.hide_note() } else { win.show_note() }
+            if shown { win.hide_note() } else { win.show_note() }
         }
         self.changed();
+    }
+
+    /// Whether note `id` is on screen. After Hide All, notes are still marked
+    /// visible (they come back with the next show) but aren't shown.
+    pub fn is_shown(&self, id: &str) -> bool {
+        self.0.windows.borrow().get(id).is_some_and(|w| w.window.is_visible())
     }
 
     pub fn show_all(&self) {
@@ -329,6 +344,7 @@ impl App {
                 win.window.present();
             }
         }
+        self.changed();
     }
 
     /// Temporarily hide windows; notes stay "open" for the next show/toggle.
@@ -339,6 +355,7 @@ impl App {
             win.save_now();
             win.window.set_visible(false);
         }
+        self.changed();
     }
 
     pub fn any_visible(&self) -> bool {

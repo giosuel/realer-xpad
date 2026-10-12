@@ -140,7 +140,7 @@ impl Manager {
         let shown: Vec<&Note> =
             notes.iter().filter(|n| query.is_empty() || n.text.to_lowercase().contains(&query)).collect();
         for note in &shown {
-            self.list.append(&self.row(note));
+            self.list.append(&self.row(note, app.is_shown(&note.id)));
         }
         self.stack.set_visible_child_name(if shown.is_empty() { "empty" } else { "list" });
         if !notes.is_empty() && shown.is_empty() {
@@ -163,7 +163,9 @@ impl Manager {
         ids
     }
 
-    fn row(&self, note: &Note) -> gtk::ListBoxRow {
+    /// A row for `note`; `shown` is whether its window is on screen right now
+    /// (after Hide All, notes are still open but not shown).
+    fn row(&self, note: &Note, shown: bool) -> gtk::ListBoxRow {
         let dot = gtk::Box::builder().valign(gtk::Align::Start).margin_top(4).build();
         dot.add_css_class("swatch");
         dot.add_css_class(&note.color);
@@ -183,7 +185,7 @@ impl Manager {
             label.add_css_class("card-preview");
             texts.append(&label);
         }
-        let mut meta = if note.visible { String::new() } else { "Hidden · ".into() };
+        let mut meta = if shown { String::new() } else { "Hidden · ".into() };
         meta += &format!("Edited {}", ago(note.updated));
         if !note.strokes.is_empty() {
             meta += " · ✎ drawing";
@@ -193,8 +195,8 @@ impl Manager {
         texts.append(&meta_label);
 
         let eye = gtk::Button::builder()
-            .icon_name(if note.visible { "view-reveal-symbolic" } else { "view-conceal-symbolic" })
-            .tooltip_text(if note.visible { "Hide" } else { "Show" })
+            .icon_name(if shown { "view-reveal-symbolic" } else { "view-conceal-symbolic" })
+            .tooltip_text(if shown { "Hide" } else { "Show" })
             .valign(gtk::Align::Center)
             .build();
         eye.add_css_class("flat");
@@ -226,18 +228,28 @@ impl Manager {
         let row = gtk::ListBoxRow::builder().child(&row_box).activatable(true).build();
         row.set_widget_name(&note.id);
         trash.set_widget_name("delete");
+        eye.set_widget_name("toggle");
         row
     }
 
     /// The delete button of the row for note `id`. Used by tests.
     pub fn delete_button(&self, id: &str) -> Option<gtk::Button> {
+        self.row_button(id, "delete")
+    }
+
+    /// The show/hide button of the row for note `id`. Used by tests.
+    pub fn toggle_button(&self, id: &str) -> Option<gtk::Button> {
+        self.row_button(id, "toggle")
+    }
+
+    fn row_button(&self, id: &str, name: &str) -> Option<gtk::Button> {
         let mut child = self.list.first_child();
         while let Some(row) = child {
             if row.widget_name() == id {
                 let row_box = row.first_child()?;
                 let mut widget = row_box.first_child();
                 while let Some(w) = widget {
-                    if w.widget_name() == "delete" {
+                    if w.widget_name() == name {
                         return w.downcast().ok();
                     }
                     widget = w.next_sibling();

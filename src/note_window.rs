@@ -57,6 +57,8 @@ fn ink_name(color: &str) -> &'static str {
 
 fn note_btn<W: IsA<gtk::Widget>>(widget: W, reveal: bool) -> W {
     widget.add_css_class("note-btn");
+    // Keep keyboard focus in the note, so typing and Ctrl+Z work after a click.
+    widget.set_focus_on_click(false);
     if reveal {
         widget.add_css_class("reveal");
     }
@@ -430,9 +432,12 @@ impl NoteWindow {
         for (shape, btn) in &self.shape_buttons {
             let shape = *shape;
             let cb = self.bind(move |w: &NoteWindow| w.choose_shape(shape));
-            btn.connect_toggled(move |b| {
-                if b.is_active() {
-                    cb();
+            // `clicked`, not `toggled`: picking the shape that's already
+            // selected must still switch to the shape tool.
+            btn.connect_clicked(move |b| {
+                cb();
+                if let Some(popover) = b.ancestor(gtk::Popover::static_type()) {
+                    popover.downcast::<gtk::Popover>().unwrap().popdown();
                 }
             });
         }
@@ -708,6 +713,9 @@ impl NoteWindow {
 
     fn on_key(&self, key: gdk::Key, state: gdk::ModifierType) -> bool {
         use gdk::Key;
+        if self.window.visible_dialog().is_some() {
+            return false; // keys belong to the dialog (Esc closes it)
+        }
         let ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
         let shift = state.contains(gdk::ModifierType::SHIFT_MASK);
         match key {

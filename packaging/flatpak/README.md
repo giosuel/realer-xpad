@@ -19,6 +19,7 @@ CI builds the Flatpak on every PR, and each release ships `Realer_Xpad-<version>
 | --- | --- |
 | `--socket=wayland`, `--socket=fallback-x11`, `--share=ipc`, `--device=dri` | A GTK 4 window, with GPU rendering |
 | `--filesystem=xdg-run/hypr:ro` | Hyprland's IPC socket, to float, size, place and pin note windows. Without it, notes still work but open as tiled windows |
+| `--talk-name=org.kde.StatusNotifierWatcher` | The tray icon: registering it with the tray (Waybar, KDE, …). The item is served under the app's unique bus name, so it needs no `--own-name` |
 
 The app needs no network, no home folder access and no portals beyond the defaults.
 

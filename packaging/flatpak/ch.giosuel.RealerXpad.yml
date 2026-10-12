@@ -12,6 +12,8 @@ finish-args:
   - --device=dri
   # Hyprland's IPC socket, used to float, size, place and pin note windows.
   - --filesystem=xdg-run/hypr:ro
+  # The tray icon (StatusNotifierItem), registered under the app's own bus name.
+  - --talk-name=org.kde.StatusNotifierWatcher
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin
 modules:

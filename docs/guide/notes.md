@@ -71,6 +71,10 @@ you used last.
 - **Delete** (in the :material-dots-vertical: menu) moves the note to the trash
   folder after asking for confirmation. Empty notes are deleted straight away.
 
+Realer Xpad keeps running in the background with every note closed, like xpad,
+and shows its logo in the system tray: click it to show or hide your notes.
+**Quit** (tray menu, notes manager, ++ctrl+q++ or `realer-xpad quit`) stops it.
+
 ## The notes manager
 
 Open it from any note's menu (**All Notes**) or with `realer-xpad manager`. It

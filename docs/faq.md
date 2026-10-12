@@ -68,5 +68,17 @@ title: FAQ
     Realer Xpad.
 
 ??? question "Where's the tray icon?"
-    There isn't one yet. Use the notes manager (`realer-xpad manager`) or a
-    keybind for `realer-xpad toggle`.
+    Realer Xpad shows its logo in the system tray of Waybar, KDE Plasma, and
+    other bars that support StatusNotifierItem. Click it to show or hide your
+    notes, middle-click for a new note, and right-click for the menu (New Note,
+    Show / Hide All Notes, All Notes…, Quit). GNOME needs the
+    [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/)
+    to show tray icons. On Waybar, add `"tray"` to your modules.
+
+    Set `REALER_XPAD_NO_TRAY=1` to run without the icon.
+
+??? question "How do I quit? Closing every note doesn't."
+    Like xpad, Realer Xpad keeps running in the background when all notes are
+    closed, so a keybind or a click on the tray icon brings them back right away.
+    To really quit, choose **Quit** in the tray menu or the notes manager, press
+    ++ctrl+q++, or run `realer-xpad quit`.

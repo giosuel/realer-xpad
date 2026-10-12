@@ -50,3 +50,4 @@ keys in any compositor.
 |---|---|
 | `REALER_XPAD_DATA` | Where notes are stored (default `~/.local/share/realer-xpad`) |
 | `REALER_XPAD_NO_HYPR` | Set to turn off the Hyprland integration |
+| `REALER_XPAD_NO_TRAY` | Set to run without the tray icon |

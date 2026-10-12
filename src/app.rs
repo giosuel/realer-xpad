@@ -368,7 +368,7 @@ impl App {
             .developer_name("giosuel")
             .application_icon(APP_ID)
             .license_type(gtk::License::Agpl30)
-            .website("https://giosuel.github.io/realer-xpad/")
+            .website("https://realer-xpad.giosuel.ch/")
             .issue_url("https://github.com/giosuel/realer-xpad/issues")
             .comments("Sticky notes with Markdown and drawing.\nPowered by Rust 🦀")
             .build();

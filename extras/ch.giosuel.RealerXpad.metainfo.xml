@@ -34,6 +34,19 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.5" date="2026-10-12">
+      <description>
+        <ul>
+          <li>Notes are safer on disk: unreadable note files are no longer overwritten, saves survive crashes, and edits made in another editor are kept</li>
+          <li>Only real edits mark a note as edited, and note files are private to your user</li>
+          <li>A stuck Hyprland can no longer freeze the notes</li>
+          <li>The notes manager's show/hide button works after Hide All</li>
+          <li>Esc closes the delete dialog, links inside bold text work, and picking the current shape selects the shape tool</li>
+          <li>The Flatpak can import notes from xpad</li>
+          <li>Many smaller fixes</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.4" date="2026-10-12">
       <description>
         <ul>

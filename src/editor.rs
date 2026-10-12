@@ -189,8 +189,10 @@ impl MarkdownEditor {
         let click = gtk::GestureClick::new();
         let weak = self.weak();
         click.connect_released(move |g, _, x, y| {
+            // A drag that selected text is for copying, not for editing.
             if let Some(ed) = Self::upgrade(&weak)
                 && g.current_button() == gdk::BUTTON_PRIMARY
+                && !ed.read_view.buffer().has_selection()
             {
                 ed.read_click(x, y);
             }
@@ -410,6 +412,9 @@ impl MarkdownEditor {
 
     /// Enter at the end of a list item: continue (or end) the list.
     pub fn continue_list(&self) -> bool {
+        if self.buffer.has_selection() {
+            return false; // plain Enter replaces the selection
+        }
         let (mut start, mut cursor) = self.current_line();
         if !cursor.ends_line() {
             return false;

@@ -249,7 +249,12 @@ impl Drawing {
         }
     }
 
+    /// Does nothing in the middle of an eraser drag, whose strokes aren't in
+    /// the history yet.
     pub fn undo(&mut self) -> bool {
+        if self.erasing.is_some() {
+            return false;
+        }
         let Some(entry) = self.undo.pop() else { return false };
         self.apply(&entry, true);
         self.redo.push(entry);
@@ -257,6 +262,9 @@ impl Drawing {
     }
 
     pub fn redo(&mut self) -> bool {
+        if self.erasing.is_some() {
+            return false;
+        }
         let Some(entry) = self.redo.pop() else { return false };
         self.apply(&entry, false);
         self.undo.push(entry);
@@ -317,6 +325,21 @@ mod tests {
 
     fn ids(d: &Drawing) -> Vec<u64> {
         d.strokes.iter().map(|s| s.id).collect()
+    }
+
+    #[test]
+    fn undo_waits_for_the_eraser_drag_to_finish() {
+        let mut d = Drawing::default();
+        d.add(Stroke::new("pen", "ink", 2.0, vec![(0.0, 0.0, 1.0), (10.0, 0.0, 1.0)]));
+        d.begin_erase();
+        assert!(d.erase_at(5.0, 0.0, 3.0));
+        assert!(!d.undo(), "not mid-drag");
+        d.end_erase();
+        assert!(d.undo(), "the erase");
+        assert_eq!(d.strokes.len(), 1);
+        assert!(d.undo(), "the stroke");
+        assert!(d.strokes.is_empty());
+        assert!(!d.undo());
     }
 
     #[test]

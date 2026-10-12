@@ -188,7 +188,7 @@ fn shapes_are_drawn_by_dragging(c: &Ctx) {
     assert_eq!((stroke.tool.as_str(), stroke.points.len()), ("rect", 2), "rectangle by default");
     assert_eq!((stroke.points[1].0, stroke.points[1].1), (80.0, 50.0));
 
-    win.shape_buttons.iter().find(|(s, _)| *s == "arrow").unwrap().1.set_active(true);
+    win.shape_buttons.iter().find(|(s, _)| *s == "arrow").unwrap().1.emit_clicked();
     assert_eq!(win.tool(), "shape");
     win.canvas.begin(10.0, 80.0, 1.0, false);
     win.canvas.update(90.0, 80.0, 1.0);
@@ -203,6 +203,17 @@ fn shapes_are_drawn_by_dragging(c: &Ctx) {
     win.select_tool("text");
     win.select_tool("ellipse");
     assert_eq!(win.tool(), "shape");
+
+    // Even when it's the shape already chosen, picked from the menu.
+    win.select_tool("pen");
+    win.shape_buttons.iter().find(|(s, _)| *s == "ellipse").unwrap().1.emit_clicked();
+    assert_eq!(win.tool(), "shape");
+
+    // An ellipse with no height would be invisible: it isn't added.
+    win.canvas.begin(10.0, 10.0, 1.0, false);
+    win.canvas.update(110.0, 11.0, 1.0);
+    win.canvas.end();
+    assert_eq!(win.note.borrow().strokes.len(), 2);
 }
 
 fn undo_follows_the_tool(c: &Ctx) {
@@ -242,6 +253,18 @@ fn tool_keys_only_while_drawing(c: &Ctx) {
     assert_eq!(win.tool(), "text");
     assert!(key(gtk::gdk::Key::d, gtk::gdk::ModifierType::CONTROL_MASK));
     assert_eq!(win.tool(), "shape", "Ctrl+D returns to the last drawing tool");
+
+    // With a dialog open, keys are the dialog's: Esc must not switch tools.
+    win.editor.buffer.set_text("keep me");
+    win.confirm_delete();
+    pump(20);
+    assert!(win.window.visible_dialog().is_some());
+    assert!(!key(gtk::gdk::Key::Escape, gtk::gdk::ModifierType::empty()));
+    assert!(!key(gtk::gdk::Key::w, gtk::gdk::ModifierType::CONTROL_MASK));
+    assert_eq!(win.tool(), "shape");
+    assert!(win.window.is_visible());
+    win.window.visible_dialog().unwrap().close();
+    pump(20);
 }
 
 fn note_saved_in_draw_mode_reopens_in_draw_mode(c: &Ctx) {
@@ -359,6 +382,22 @@ fn toggle_command_hides_and_restores(c: &Ctx) {
     assert!(c.app.notes().iter().all(|n| n.borrow().visible)); // still "open", just hidden
     c.app.run_command("toggle");
     assert!(c.app.windows().iter().all(|w| w.window.is_visible()));
+}
+
+fn manager_shows_notes_hidden_by_hide_all(c: &Ctx) {
+    let win = c.new_window();
+    win.editor.buffer.set_text("hidden for now");
+    c.app.hide_all();
+    c.app.open_manager();
+    let m = c.app.manager().unwrap();
+    let eye = m.toggle_button(&win.id()).unwrap();
+    assert_eq!(eye.tooltip_text().as_deref(), Some("Show"), "not on screen, so the button shows it");
+    eye.emit_clicked();
+    pump(20);
+    assert!(win.window.is_visible(), "shown, not hidden for good");
+    assert!(win.note.borrow().visible);
+    assert_eq!(m.toggle_button(&win.id()).unwrap().tooltip_text().as_deref(), Some("Hide"));
+    m.window.close();
 }
 
 fn delete_empty_note_skips_confirmation(c: &Ctx) {
@@ -691,6 +730,7 @@ fn main() {
         ("bundled_icons_are_available", bundled_icons_are_available),
         ("hide_and_show", hide_and_show),
         ("toggle_command_hides_and_restores", toggle_command_hides_and_restores),
+        ("manager_shows_notes_hidden_by_hide_all", manager_shows_notes_hidden_by_hide_all),
         ("delete_empty_note_skips_confirmation", delete_empty_note_skips_confirmation),
         ("existing_notes_open_on_show", existing_notes_open_on_show),
         ("read_view_checkbox_click", read_view_checkbox_click),

@@ -61,7 +61,13 @@ static RE_ORDERED: LazyLock<Regex> = LazyLock::new(|| re(r"^([ \t]*)(\d+[.)])[ \
 
 static RE_CODE: LazyLock<Regex> = LazyLock::new(|| re(r"(`+)(.+?)\1"));
 static RE_LINK: LazyLock<Regex> = LazyLock::new(|| re(r"\[([^\]\n]+)\]\(([^)\s]+)\)"));
-static RE_URL: LazyLock<Regex> = LazyLock::new(|| re(r#"\bhttps?://[^\s<>()\[\]]+[^\s<>()\[\].,;:!?'"]"#));
+// No `*` or backtick, so `**https://x.y**` stays bold, and none of the
+// `placeholder` characters, so a URL never runs into masked code.
+static RE_URL: LazyLock<Regex> = LazyLock::new(|| {
+    re(
+        r#"(?<![A-Za-z0-9])https?://[^\s<>()\[\]*`\x00\x{A7}\x{2060}\x{1F600}]+[^\s<>()\[\]*`\x00\x{A7}\x{2060}\x{1F600}.,;:!?'"_~]"#,
+    )
+});
 static RE_BOLD: LazyLock<Regex> = LazyLock::new(|| re(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"));
 static RE_STRIKE: LazyLock<Regex> = LazyLock::new(|| re(r"(~~)(?=\S)(.+?)(?<=\S)\1"));
 static RE_ITALIC: LazyLock<Regex> = LazyLock::new(|| re(r"(?<![\w*_])([*_])(?=\S)(.+?)(?<=\S)\1(?![\w*_])"));
@@ -350,7 +356,7 @@ pub fn continue_list(line: &str) -> Option<String> {
         (m, prefix)
     } else if let Some(m) = first(&RE_ORDERED, line) {
         let num = &m[2];
-        let next: u64 = num[..num.len() - 1].parse().unwrap_or(0) + 1;
+        let next = num[..num.len() - 1].parse::<u64>().unwrap_or(0).saturating_add(1);
         let prefix = format!("{}{}{} ", &m[1], next, &num[num.len() - 1..]);
         (m, prefix)
     } else {
@@ -515,6 +521,23 @@ mod tests {
     }
 
     #[test]
+    fn urls_inside_emphasis_and_next_to_code() {
+        let link = |text: &str| {
+            parse(text).spans.into_iter().find(|s| s.tag == "link").map(|s| (slice(text, s.start, s.end), s.data))
+        };
+        let url = Some(("https://example.com".to_string(), Some("https://example.com".to_string())));
+        assert_eq!(link("**https://example.com**"), url);
+        assert!(has("**https://example.com**", "bold", "https://example.com"));
+        assert_eq!(link("*https://example.com*"), url);
+        assert_eq!(link("_https://example.com_"), url);
+        assert_eq!(link("see https://example.com`code`"), url);
+        assert_eq!(
+            link("https://example.com/a_b~c"),
+            Some(("https://example.com/a_b~c".into(), Some("https://example.com/a_b~c".into())))
+        );
+    }
+
+    #[test]
     fn to_source_offsets() {
         let src = "# Hi **there**";
         let r = rendered(src);
@@ -535,5 +558,6 @@ mod tests {
         assert_eq!(continue_list("- ").as_deref(), Some(""));
         assert_eq!(continue_list("- [ ] ").as_deref(), Some(""));
         assert_eq!(continue_list("plain"), None);
+        assert_eq!(continue_list("18446744073709551615. huge").as_deref(), Some("18446744073709551615. "));
     }
 }

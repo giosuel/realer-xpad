@@ -291,8 +291,11 @@ impl Canvas {
         let Some(mut stroke) = self.current.borrow_mut().take() else { return };
         if stroke.is_shape() {
             let (a, b) = (stroke.points[0], stroke.points[1]);
-            if (a.0 - b.0).hypot(a.1 - b.1) < 3.0 {
-                self.area.queue_draw(); // a click, not a drag: no shape
+            let (dx, dy) = ((a.0 - b.0).abs(), (a.1 - b.1).abs());
+            // A click, not a drag, or a box or ellipse too flat to see: no shape.
+            let flat = matches!(stroke.tool.as_str(), "rect" | "ellipse") && dx.min(dy) < 3.0;
+            if dx.hypot(dy) < 3.0 || flat {
+                self.area.queue_draw();
                 return;
             }
         } else {

@@ -55,18 +55,39 @@ window.note .placeholder {
 window.note scrollbar { background: none; }
 window.note scrollbar slider { background-color: var(--note-tint-strong); }
 
-/* Floating drawing toolbar */
-window.note .draw-bar {
-  margin: 0 8px 10px 8px;
-  padding: 3px;
+/* Tool row: text and drawing tools, ink, undo/redo. Always visible. */
+window.note .tool-bar {
+  margin: 2px 6px 6px 6px;
+  padding: 2px;
   border-radius: 999px;
-  background-color: var(--note-bg);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.16), inset 0 0 0 1px var(--note-tint-strong);
+  background-color: var(--note-tint);
 }
-window.note .draw-bar separator {
+window.note .tool-bar button.note-btn,
+window.note .tool-bar menubutton.note-btn > button {
+  min-width: 24px;
+  min-height: 24px;
+}
+window.note .tool-bar separator {
   background: var(--note-tint-strong);
-  margin: 6px 3px;
+  margin: 5px 3px;
   min-width: 1px;
+}
+window.note .tool-bar menubutton.note-btn:disabled { opacity: 0.35; }
+/* Shapes: the tool button and its narrow ▾ menu read as one split button. */
+window.note .tool-bar button.split-main { border-radius: 999px 0 0 999px; }
+window.note .tool-bar menubutton.split-arrow > button {
+  min-width: 13px;
+  border-radius: 0 999px 999px 0;
+  -gtk-icon-size: 10px;
+}
+
+/* The note colour button: one dot made of all the colours. */
+.palette-dot {
+  min-width: 15px;
+  min-height: 15px;
+  border-radius: 999px;
+  background-image: conic-gradient(#f0c43c, #ff9a5c, #ff7aab, #ab92ff, #6cb4ff, #5bd69a, #a6afbf, #f0c43c);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18);
 }
 
 /* Popovers (colours, ink, menu) take on the note's colour instead of the

@@ -3,11 +3,14 @@
   <gresource prefix="/ch/giosuel/RealerXpad">
     <file>note.css</file>
     <file alias="icons/scalable/apps/ch.giosuel.RealerXpad.svg" preprocess="xml-stripblanks">icons/hicolor/scalable/apps/ch.giosuel.RealerXpad.svg</file>
-    <file preprocess="xml-stripblanks">icons/scalable/actions/rx-draw-symbolic.svg</file>
+    <file preprocess="xml-stripblanks">icons/scalable/actions/rx-arrow-symbolic.svg</file>
+    <file preprocess="xml-stripblanks">icons/scalable/actions/rx-ellipse-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/rx-eraser-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/rx-highlighter-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/rx-pen-symbolic.svg</file>
+    <file preprocess="xml-stripblanks">icons/scalable/actions/rx-line-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/rx-pin-symbolic.svg</file>
+    <file preprocess="xml-stripblanks">icons/scalable/actions/rx-rect-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/rx-text-symbolic.svg</file>
   </gresource>
 </gresources>

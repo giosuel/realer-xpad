@@ -47,7 +47,7 @@ Click a `- [ ]` box to tick it. <kbd>Enter</kbd> continues the list and <kbd>Tab
 <td width="33%" valign="top">
 
 **✏️ Draw on anything**<br>
-Pen, highlighter and eraser, with stylus pressure. The default ink adapts to light and dark mode.
+Pen, highlighter, shapes and eraser, always one click away, with stylus pressure. The default ink adapts to light and dark mode.
 
 </td>
 </tr>
@@ -128,14 +128,14 @@ hl.bind("SUPER + SHIFT + N", hl.dsp.exec_cmd("realer-xpad toggle"))  -- hide / s
 | Key | Action |
 |---|---|
 | <kbd>Ctrl</kbd> <kbd>N</kbd> | New note |
-| <kbd>Ctrl</kbd> <kbd>D</kbd> | Toggle draw mode |
+| <kbd>Ctrl</kbd> <kbd>D</kbd> | Switch between typing and drawing |
 | <kbd>Ctrl</kbd> <kbd>E</kbd> | Switch edit / read view |
 | <kbd>Ctrl</kbd> <kbd>B</kbd> · <kbd>Ctrl</kbd> <kbd>I</kbd> | Bold · italic |
 | <kbd>Tab</kbd> · <kbd>Shift</kbd> <kbd>Tab</kbd> | Indent · outdent list item |
-| <kbd>P</kbd> · <kbd>H</kbd> · <kbd>E</kbd> | Pen · highlighter · eraser (draw mode) |
+| <kbd>T</kbd> · <kbd>P</kbd> · <kbd>H</kbd> · <kbd>S</kbd> · <kbd>E</kbd> | Text · pen · highlighter · shapes · eraser (while drawing) |
 | <kbd>Ctrl</kbd> <kbd>Z</kbd> · <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd> | Undo · redo |
 | <kbd>Ctrl</kbd> <kbd>W</kbd> | Close (hide) note |
-| <kbd>Esc</kbd> | Read view / leave draw mode |
+| <kbd>Esc</kbd> | Read view / back to Text |
 
 | Command | |
 |---|---|

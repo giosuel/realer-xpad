@@ -57,7 +57,7 @@ so a normal click still places the cursor.
 
 ## Colours
 
-Hover over a note and click :material-eyedropper-variant: to choose one of
+Hover over a note and click the multicoloured dot in its header to choose one of
 seven colours. Each one has a separate dark variant that's used automatically
 when your system switches to dark mode. New notes take the colour of the note
 you used last.

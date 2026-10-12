@@ -9,26 +9,38 @@ use gtk::{gdk, gio, glib};
 
 use crate::app::{App, AppInner};
 use crate::canvas::Canvas;
-use crate::drawing::{Drawing, INK_COLORS, TOOLS, WIDTHS};
+use crate::drawing::{Drawing, INK_COLORS, SHAPES, WIDTHS};
 use crate::editor::{MarkdownEditor, TEXT_INSET, TEXT_TOP};
 use crate::store::{COLORS, Note};
 use crate::theme::{PALETTE, swatch};
 
 const SAVE_DELAY: Duration = Duration::from_millis(500);
 
-fn tool_icon(tool: &str) -> &'static str {
-    match tool {
-        "pen" => "rx-pen-symbolic",
-        "highlighter" => "rx-highlighter-symbolic",
-        _ => "rx-eraser-symbolic",
+/// The always-visible tool row: (tool, icon, tooltip). `"shape"` stands for
+/// whichever shape is chosen.
+const TOOL_ROW: [(&str, &str, &str); 5] = [
+    ("text", "rx-text-symbolic", "Text (T)"),
+    ("pen", "rx-pen-symbolic", "Pen (P)"),
+    ("highlighter", "rx-highlighter-symbolic", "Highlighter (H)"),
+    ("shape", "rx-rect-symbolic", "Shapes (S)"),
+    ("eraser", "rx-eraser-symbolic", "Eraser (E)"),
+];
+
+fn shape_icon(shape: &str) -> &'static str {
+    match shape {
+        "line" => "rx-line-symbolic",
+        "arrow" => "rx-arrow-symbolic",
+        "ellipse" => "rx-ellipse-symbolic",
+        _ => "rx-rect-symbolic",
     }
 }
 
-fn tool_name(tool: &str) -> &'static str {
-    match tool {
-        "pen" => "Pen (P)",
-        "highlighter" => "Highlighter (H)",
-        _ => "Eraser (E)",
+fn shape_name(shape: &str) -> &'static str {
+    match shape {
+        "line" => "Line",
+        "arrow" => "Arrow",
+        "ellipse" => "Ellipse",
+        _ => "Rectangle",
     }
 }
 
@@ -76,19 +88,28 @@ pub struct Inner {
     app: Weak<AppInner>,
     pub editor: MarkdownEditor,
     pub canvas: Canvas,
-    pub mode_btn: gtk::ToggleButton,
     pub pin_btn: gtk::ToggleButton,
-    pub draw_bar: gtk::Revealer,
+    pub tool_bar: gtk::Box,
     pub placeholder: gtk::Label,
     pub undo_btn: gtk::Button,
     pub redo_btn: gtk::Button,
+    /// Text, pen, highlighter, shape and eraser, in the tool row.
     pub tool_buttons: Vec<(&'static str, gtk::ToggleButton)>,
+    pub shape_buttons: Vec<(&'static str, gtk::ToggleButton)>,
     pub swatch_buttons: Vec<(&'static str, gtk::ToggleButton)>,
+    pub color_btn: gtk::MenuButton,
+    pub ink_btn: gtk::MenuButton,
+    /// The selected tool (`"text"`, a freehand tool, `"shape"` or `"eraser"`).
+    tool: RefCell<&'static str>,
+    /// The drawing tool Ctrl+D switches to, and the chosen shape.
+    last_draw_tool: RefCell<&'static str>,
+    shape: RefCell<&'static str>,
     ink_buttons: Vec<(&'static str, gtk::ToggleButton)>,
     width_buttons: Vec<(f64, gtk::ToggleButton)>,
     clear_btn: gtk::Button,
     close_btn: gtk::Button,
     ink_dot: gtk::Box,
+    shape_btn: gtk::ToggleButton,
     save_id: RefCell<Option<glib::SourceId>>,
 }
 
@@ -113,7 +134,7 @@ impl NoteWindow {
             .default_width(width)
             .default_height(height)
             .build();
-        window.set_size_request(180, 140);
+        window.set_size_request(230, 140); // room for the tool row
         window.add_css_class("note");
         // Unique initial title so the compositor (Hyprland) can identify us.
         window.set_title(Some(&initial_title(&id)));
@@ -142,9 +163,12 @@ impl NoteWindow {
             swatch_grid.append(&btn);
             swatch_buttons.push((name, btn));
         }
+        // A dot made of all note colours reads as "colour" more clearly than an eyedropper.
+        let palette_dot = gtk::Box::builder().halign(gtk::Align::Center).valign(gtk::Align::Center).build();
+        palette_dot.add_css_class("palette-dot");
         let color_btn = note_btn(
             gtk::MenuButton::builder()
-                .icon_name("color-select-symbolic")
+                .child(&palette_dot)
                 .tooltip_text("Note colour")
                 .valign(gtk::Align::Center)
                 .popover(&gtk::Popover::builder().child(&swatch_grid).build())
@@ -154,8 +178,6 @@ impl NoteWindow {
         start.append(&color_btn);
 
         let end = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-        let mode_btn = toggle("rx-draw-symbolic", "Draw (Ctrl+D)", true);
-        end.append(&mode_btn);
         let pin_btn = toggle("rx-pin-symbolic", "Keep on top, on every workspace", true);
         pin_btn.set_visible(app.hypr().is_some());
         pin_btn.set_active(pinned);
@@ -183,7 +205,7 @@ impl NoteWindow {
         let editor = MarkdownEditor::new();
         let canvas = Canvas::new(Drawing::new(strokes));
         let placeholder = gtk::Label::builder()
-            .label("Start typing… Markdown works")
+            .label("Start typing…")
             .halign(gtk::Align::Start)
             .valign(gtk::Align::Start)
             .margin_start(TEXT_INSET)
@@ -192,19 +214,46 @@ impl NoteWindow {
             .build();
         placeholder.add_css_class("placeholder");
 
-        // Floating drawing toolbar.
-        let bar = gtk::Box::builder().spacing(2).halign(gtk::Align::Center).build();
-        bar.add_css_class("draw-bar");
+        // The tool row, always visible: text, the drawing tools, ink, undo/redo.
+        let bar = gtk::Box::builder().spacing(1).halign(gtk::Align::Center).build();
+        bar.add_css_class("tool-bar");
         let mut tool_buttons = Vec::new();
         let mut group: Option<gtk::ToggleButton> = None;
-        for tool in TOOLS {
-            let btn = toggle(tool_icon(tool), tool_name(tool), false);
+        let shape_list =
+            gtk::Box::builder().spacing(2).margin_top(4).margin_bottom(4).margin_start(4).margin_end(4).build();
+        let mut shape_buttons = Vec::new();
+        let mut shape_group: Option<gtk::ToggleButton> = None;
+        for shape in SHAPES {
+            let btn = toggle(shape_icon(shape), shape_name(shape), false);
+            btn.set_group(shape_group.as_ref());
+            shape_group.get_or_insert_with(|| btn.clone());
+            shape_list.append(&btn);
+            shape_buttons.push((shape, btn));
+        }
+        let shape_menu = note_btn(
+            gtk::MenuButton::builder()
+                .icon_name("pan-down-symbolic")
+                .tooltip_text("Choose a shape")
+                .valign(gtk::Align::Center)
+                .popover(&gtk::Popover::builder().child(&shape_list).build())
+                .build(),
+            false,
+        );
+        shape_menu.add_css_class("split-arrow");
+        let mut shape_btn = None;
+        for (tool, icon, tooltip) in TOOL_ROW {
+            let btn = toggle(icon, tooltip, false);
             btn.set_group(group.as_ref());
             group.get_or_insert_with(|| btn.clone());
             bar.append(&btn);
+            if tool == "shape" {
+                btn.add_css_class("split-main");
+                bar.append(&shape_menu);
+                shape_btn = Some(btn.clone());
+            }
             tool_buttons.push((tool, btn));
         }
-        tool_buttons[0].1.set_active(true);
+        let shape_btn = shape_btn.expect("a shape tool");
         bar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
 
         let ink_dot = gtk::Box::builder().halign(gtk::Align::Center).valign(gtk::Align::Center).build();
@@ -263,21 +312,14 @@ impl NoteWindow {
         bar.append(&undo_btn);
         bar.append(&redo_btn);
 
-        let draw_bar = gtk::Revealer::builder()
-            .child(&bar)
-            .reveal_child(false)
-            .valign(gtk::Align::End)
-            .transition_type(gtk::RevealerTransitionType::Crossfade)
-            .build();
-
         let body = gtk::Overlay::builder().child(editor.widget()).vexpand(true).build();
         body.add_overlay(&placeholder);
         body.add_overlay(&canvas.area);
-        body.add_overlay(&draw_bar);
 
         let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
         content.append(&handle);
         content.append(&body);
+        content.append(&bar);
         window.set_content(Some(&content));
 
         let win = NoteWindow(Rc::new(Inner {
@@ -286,19 +328,25 @@ impl NoteWindow {
             app: Rc::downgrade(&app.0),
             editor,
             canvas,
-            mode_btn,
             pin_btn,
-            draw_bar,
+            tool_bar: bar,
             placeholder,
             undo_btn,
             redo_btn,
             tool_buttons,
+            shape_buttons,
             swatch_buttons,
+            color_btn,
+            ink_btn,
+            tool: RefCell::new("text"),
+            last_draw_tool: RefCell::new("pen"),
+            shape: RefCell::new("rect"),
             ink_buttons,
             width_buttons,
             clear_btn,
             close_btn,
             ink_dot,
+            shape_btn,
             save_id: RefCell::default(),
         }));
 
@@ -308,7 +356,8 @@ impl NoteWindow {
         };
         win.editor.set_text(&text);
         win.apply_color();
-        win.set_mode(&mode, true);
+        win.shape_buttons[2].1.set_active(true); // rectangle
+        win.set_tool(if mode == "draw" { "pen" } else { "text" }, true);
         if !text.trim().is_empty() {
             win.editor.show_read();
         }
@@ -351,15 +400,6 @@ impl NoteWindow {
         let cb = on(NoteWindow::on_drawing_changed);
         self.canvas.connect_changed(cb);
 
-        let weak = self.weak();
-        self.mode_btn.connect_toggled(move |b| {
-            if let Some(inner) = weak.upgrade() {
-                let (w, mode) = (NoteWindow(inner), if b.is_active() { "draw" } else { "text" });
-                if w.mode() != mode {
-                    w.set_mode(mode, false);
-                }
-            }
-        });
         let cb = on(NoteWindow::on_pin_toggled);
         self.pin_btn.connect_toggled(move |_| cb());
         let cb = on(NoteWindow::hide_note);
@@ -376,7 +416,20 @@ impl NoteWindow {
         }
         for (tool, btn) in &self.tool_buttons {
             let tool = *tool;
-            let cb = self.bind(move |w: &NoteWindow| w.canvas.set_tool(tool));
+            let cb = self.bind(move |w: &NoteWindow| {
+                if *w.tool.borrow() != tool {
+                    w.set_tool(tool, false);
+                }
+            });
+            btn.connect_toggled(move |b| {
+                if b.is_active() {
+                    cb();
+                }
+            });
+        }
+        for (shape, btn) in &self.shape_buttons {
+            let shape = *shape;
+            let cb = self.bind(move |w: &NoteWindow| w.choose_shape(shape));
             btn.connect_toggled(move |b| {
                 if b.is_active() {
                     cb();
@@ -403,10 +456,14 @@ impl NoteWindow {
         }
         let cb = on(|w| w.canvas.clear());
         self.clear_btn.connect_clicked(move |_| cb());
-        let cb = on(|w| w.canvas.undo());
+        let cb = on(NoteWindow::undo);
         self.undo_btn.connect_clicked(move |_| cb());
-        let cb = on(|w| w.canvas.redo());
+        let cb = on(NoteWindow::redo);
         self.redo_btn.connect_clicked(move |_| cb());
+        let cb = on(NoteWindow::update_undo_buttons);
+        self.editor.buffer.connect_can_undo_notify(move |_| cb());
+        let cb = on(NoteWindow::update_undo_buttons);
+        self.editor.buffer.connect_can_redo_notify(move |_| cb());
 
         let cb = on(NoteWindow::apply_color);
         adw::StyleManager::default().connect_dark_notify(move |_| cb());
@@ -451,7 +508,7 @@ impl NoteWindow {
         for (name, f) in [
             ("delete", NoteWindow::confirm_delete as fn(&NoteWindow)),
             ("close", NoteWindow::hide_note),
-            ("toggle-draw", |w| w.mode_btn.set_active(!w.mode_btn.is_active())),
+            ("toggle-draw", NoteWindow::toggle_draw),
             ("toggle-read", NoteWindow::toggle_read),
         ] {
             let action = gio::SimpleAction::new(name, None);
@@ -501,31 +558,85 @@ impl NoteWindow {
         self.schedule_save();
     }
 
-    // -- modes ----------------------------------------------------------
+    // -- tools ----------------------------------------------------------
 
-    pub fn set_mode(&self, mode: &str, initial: bool) {
-        let drawing = mode == "draw";
-        self.note.borrow_mut().mode = mode.into();
-        if self.mode_btn.is_active() != drawing {
-            self.mode_btn.set_active(drawing); // the handler sees the mode is already set
+    /// Select a tool: `"text"` types, every other tool draws on the note.
+    pub fn set_tool(&self, tool: &str, initial: bool) {
+        let Some((tool, btn)) = self.tool_buttons.iter().find(|(t, _)| *t == tool) else { return };
+        let tool: &'static str = tool;
+        *self.tool.borrow_mut() = tool;
+        if !btn.is_active() {
+            btn.set_active(true); // the handler sees the tool is already set
         }
-        self.mode_btn.set_icon_name(if drawing { "rx-text-symbolic" } else { "rx-draw-symbolic" });
-        self.mode_btn.set_tooltip_text(Some(if drawing { "Back to text (Ctrl+D)" } else { "Draw (Ctrl+D)" }));
+        let drawing = tool != "text";
+        if drawing {
+            *self.last_draw_tool.borrow_mut() = tool;
+            let canvas_tool = if tool == "shape" { *self.shape.borrow() } else { tool };
+            self.canvas.set_tool(canvas_tool);
+        }
+        // The note's mode is still saved, so older versions open it the same way.
+        self.note.borrow_mut().mode = if drawing { "draw" } else { "text" }.into();
         self.canvas.area.set_can_target(drawing);
-        self.draw_bar.set_reveal_child(drawing);
+        self.ink_btn.set_sensitive(drawing && tool != "eraser");
         if drawing {
             self.editor.show_read();
         } else if !initial {
             self.editor.show_edit(None);
         }
         self.update_placeholder();
+        self.update_undo_buttons();
         if !initial {
             self.schedule_save();
         }
     }
 
+    pub fn tool(&self) -> &'static str {
+        *self.tool.borrow()
+    }
+
+    /// Pick the shape the shape tool draws, and switch to it.
+    pub fn choose_shape(&self, shape: &str) {
+        let Some(shape) = SHAPES.iter().find(|s| **s == shape) else { return };
+        *self.shape.borrow_mut() = shape;
+        self.shape_btn.set_icon_name(shape_icon(shape));
+        self.shape_btn.set_tooltip_text(Some(&format!("{} (S)", shape_name(shape))));
+        if let Some((_, btn)) = self.shape_buttons.iter().find(|(s, _)| s == shape)
+            && !btn.is_active()
+        {
+            btn.set_active(true);
+        }
+        if self.tool() == "shape" {
+            self.canvas.set_tool(shape);
+        } else {
+            self.set_tool("shape", false);
+        }
+    }
+
+    /// Ctrl+D: between typing and the last drawing tool.
+    fn toggle_draw(&self) {
+        let tool = if self.tool() == "text" { *self.last_draw_tool.borrow() } else { "text" };
+        self.set_tool(tool, false);
+    }
+
     pub fn mode(&self) -> String {
         self.note.borrow().mode.clone()
+    }
+
+    /// Undo in whatever the current tool works on: the text or the drawing.
+    fn undo(&self) {
+        if self.tool() == "text" {
+            self.editor.buffer.undo();
+        } else {
+            self.canvas.undo();
+        }
+    }
+
+    fn redo(&self) {
+        if self.tool() == "text" {
+            self.editor.buffer.redo();
+        } else {
+            self.canvas.redo();
+        }
     }
 
     fn toggle_read(&self) {
@@ -563,9 +674,14 @@ impl NoteWindow {
     }
 
     fn update_undo_buttons(&self) {
-        let d = self.canvas.drawing.borrow();
-        self.undo_btn.set_sensitive(d.can_undo());
-        self.redo_btn.set_sensitive(d.can_redo());
+        let (undo, redo) = if self.tool() == "text" {
+            (self.editor.buffer.can_undo(), self.editor.buffer.can_redo())
+        } else {
+            let d = self.canvas.drawing.borrow();
+            (d.can_undo(), d.can_redo())
+        };
+        self.undo_btn.set_sensitive(undo);
+        self.redo_btn.set_sensitive(redo);
     }
 
     fn update_title(&self) {
@@ -596,17 +712,20 @@ impl NoteWindow {
         let shift = state.contains(gdk::ModifierType::SHIFT_MASK);
         match key {
             Key::e | Key::E if ctrl => self.toggle_read(),
-            Key::d | Key::D if ctrl => self.mode_btn.set_active(!self.mode_btn.is_active()),
+            Key::d | Key::D if ctrl => self.toggle_draw(),
             Key::w | Key::W if ctrl => self.hide_note(),
-            _ if self.mode() == "draw" => match key {
+            // Single-letter tool keys only while drawing: in the text tool they type.
+            _ if self.tool() != "text" => match key {
                 Key::z | Key::Z if ctrl && shift => self.canvas.redo(),
                 Key::z | Key::Z if ctrl => self.canvas.undo(),
                 Key::y | Key::Y if ctrl => self.canvas.redo(),
-                Key::Escape => self.mode_btn.set_active(false),
-                Key::p | Key::h | Key::e if !ctrl => {
+                Key::Escape => self.set_tool("text", false),
+                Key::t | Key::p | Key::h | Key::s | Key::e if !ctrl => {
                     let tool = match key {
+                        Key::t => "text",
                         Key::p => "pen",
                         Key::h => "highlighter",
+                        Key::s => "shape",
                         _ => "eraser",
                     };
                     self.select_tool(tool);
@@ -621,8 +740,11 @@ impl NoteWindow {
         true
     }
 
+    /// Select a tool as if its button was clicked; a shape name picks that shape.
     pub fn select_tool(&self, tool: &str) {
-        if let Some((_, btn)) = self.tool_buttons.iter().find(|(t, _)| *t == tool) {
+        if SHAPES.contains(&tool) {
+            self.choose_shape(tool);
+        } else if let Some((_, btn)) = self.tool_buttons.iter().find(|(t, _)| *t == tool) {
             btn.set_active(true);
         }
     }

@@ -77,6 +77,8 @@ Every note is a `.md` file in `~/.local/share/realer-xpad`, so you can grep, syn
 
 **Arch Linux** – from the AUR: `yay -S realer-xpad-bin` (prebuilt) or `yay -S realer-xpad` (from source).
 
+**Nix** – `nix run github:giosuel/realer-xpad`, or `nix profile install github:giosuel/realer-xpad`.
+
 **AppImage (any distro)** – download `Realer_Xpad-*-x86_64.AppImage` from the [latest release](https://github.com/giosuel/realer-xpad/releases), then:
 
 ```sh

@@ -18,6 +18,16 @@ yay -S realer-xpad       # or build from source (x86_64 and aarch64)
 Any AUR helper works (`paru`, `yay`, …). Updates come with your normal system
 upgrades.
 
+## Nix
+
+```sh
+nix run github:giosuel/realer-xpad              # try it
+nix profile install github:giosuel/realer-xpad  # install it
+```
+
+The flake also has an overlay and a NixOS / home-manager friendly
+`packages.<system>.default`.
+
 ## Option A: AppImage (recommended)
 
 One file with GTK 4 and libadwaita bundled. Nothing to install, and it runs even

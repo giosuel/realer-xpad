@@ -205,15 +205,14 @@ impl Manager {
             .build();
         trash.add_css_class("flat");
         for (btn, delete) in [(&eye, false), (&trash, true)] {
-            let (app, id) = (self.app.clone(), note.id.clone());
+            let (app, id, window) = (self.app.clone(), note.id.clone(), self.window.downgrade());
             btn.connect_clicked(move |_| {
                 let Some(app) = app.upgrade().map(App) else { return };
-                if delete {
-                    if let Some(win) = app.window_for(&id) {
-                        win.confirm_delete();
-                    }
-                } else {
+                if !delete {
                     app.toggle_note(&id);
+                } else if let Some(window) = window.upgrade() {
+                    // Ask here, not over the note: it may be hidden.
+                    app.confirm_delete(&id, window.upcast_ref());
                 }
             });
         }
@@ -226,6 +225,26 @@ impl Manager {
         row_box.append(&trash);
         let row = gtk::ListBoxRow::builder().child(&row_box).activatable(true).build();
         row.set_widget_name(&note.id);
+        trash.set_widget_name("delete");
         row
+    }
+
+    /// The delete button of the row for note `id`. Used by tests.
+    pub fn delete_button(&self, id: &str) -> Option<gtk::Button> {
+        let mut child = self.list.first_child();
+        while let Some(row) = child {
+            if row.widget_name() == id {
+                let row_box = row.first_child()?;
+                let mut widget = row_box.first_child();
+                while let Some(w) = widget {
+                    if w.widget_name() == "delete" {
+                        return w.downcast().ok();
+                    }
+                    widget = w.next_sibling();
+                }
+            }
+            child = row.next_sibling();
+        }
+        None
     }
 }

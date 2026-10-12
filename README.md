@@ -15,7 +15,7 @@
 [![Wayland native](https://img.shields.io/badge/Wayland-native-e5484d?style=flat-square&logo=wayland&logoColor=white)](#)
 [![Hyprland ready](https://img.shields.io/badge/Hyprland-ready-58e1ff?style=flat-square&logo=hyprland&logoColor=white)](#hyprland)
 
-[**Website**](https://giosuel.github.io/realer-xpad/) · [**Install**](#install) · [**Hyprland setup**](#hyprland) · [**Shortcuts**](#shortcuts)
+[**Website**](https://realer-xpad.giosuel.ch/) · [**Install**](#install) · [**Hyprland setup**](#hyprland) · [**Shortcuts**](#shortcuts)
 
 </div>
 

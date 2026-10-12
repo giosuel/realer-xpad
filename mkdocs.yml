@@ -1,7 +1,7 @@
 site_name: Realer Xpad
 site_description: Sticky notes for Linux that speak Markdown and let you doodle. Wayland-native, Hyprland-ready.
 site_author: giosuel
-site_url: https://giosuel.github.io/realer-xpad/
+site_url: https://realer-xpad.giosuel.ch/
 repo_url: https://github.com/giosuel/realer-xpad
 repo_name: giosuel/realer-xpad
 edit_uri: edit/main/docs/

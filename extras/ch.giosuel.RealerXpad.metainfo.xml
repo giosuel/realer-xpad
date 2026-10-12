@@ -23,7 +23,7 @@
     </ul>
   </description>
   <launchable type="desktop-id">ch.giosuel.RealerXpad.desktop</launchable>
-  <url type="homepage">https://giosuel.github.io/realer-xpad/</url>
+  <url type="homepage">https://realer-xpad.giosuel.ch/</url>
   <url type="bugtracker">https://github.com/giosuel/realer-xpad/issues</url>
   <url type="vcs-browser">https://github.com/giosuel/realer-xpad</url>
   <screenshots>

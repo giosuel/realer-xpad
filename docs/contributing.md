@@ -25,14 +25,17 @@ cargo run -- new              # any CLI command works after --
 ## Tests
 
 ```sh
-cargo test                                  # unit tests; UI tests skip without a display
+cargo test                                  # unit tests; UI tests skip outside headless.sh
 tools/headless.sh cargo test --test ui      # UI tests, inside a throwaway headless sway
 cargo clippy --all-targets -- -D warnings   # lint
 cargo fmt
 ```
 
 `tools/headless.sh` starts a pure-Wayland sway with no Xwayland, so the UI
-tests also check that nothing depends on X11. It needs `sway` installed. GTK
+tests also check that nothing depends on X11. It also gives them a private
+D-Bus session (if `dbus-run-session` is installed) and hides any running
+Hyprland, so they never touch your desktop or your notes. It needs `sway`
+installed. GTK
 must stay on a single thread, so `tests/ui.rs` uses its own small test harness
 instead of libtest. CI runs everything on Debian and Fedora.
 
@@ -78,12 +81,18 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-docs.txt
 
 ## Releasing
 
-Bump `version` in `Cargo.toml`, then push a matching tag:
+1. Bump `version` in `Cargo.toml` and run `cargo update -p realer-xpad` so
+   `Cargo.lock` matches. CI builds with `--locked` and fails otherwise.
+2. Add a `<release>` entry with notes to
+   `extras/ch.giosuel.RealerXpad.metainfo.xml`.
+3. Merge that to `main`, then push a matching tag from it:
 
 ```sh
-git tag v0.2.0 && git push origin v0.2.0
+git checkout main && git pull && git tag v0.2.0 && git push origin v0.2.0
 ```
 
 CI checks that the tag matches the version, then publishes a GitHub release
-with the AppImage (plus `.zsync` for delta updates), a binary tarball and
-`SHA256SUMS`.
+with the AppImage (plus `.zsync` for delta updates), a binary tarball, the
+Flatpak bundle and `SHA256SUMS`, and updates both AUR packages. The
+`pkgver` in `packaging/aur/*/PKGBUILD` is set from the tag at that point, so
+the copies in this repo don't need bumping.

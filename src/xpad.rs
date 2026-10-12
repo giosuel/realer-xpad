@@ -24,7 +24,14 @@ const XPAD_DEFAULT_BACK: (u8, u8, u8) = (255, 238, 153);
 const MARKER: &str = ".xpad-imported";
 
 pub fn default_dir() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
+    // Inside Flatpak, XDG_CONFIG_HOME is the app's own folder; xpad's notes are
+    // in the host's (see `--filesystem=xdg-config/xpad:ro`).
+    let config = if std::env::var_os("FLATPAK_ID").is_some() {
+        std::env::var_os("HOST_XDG_CONFIG_HOME")
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+    };
+    let base = config
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".config"));
     base.join("xpad")

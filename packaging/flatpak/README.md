@@ -19,9 +19,14 @@ CI builds the Flatpak on every PR, and each release ships `Realer_Xpad-<version>
 | --- | --- |
 | `--socket=wayland`, `--socket=fallback-x11`, `--share=ipc`, `--device=dri` | A GTK 4 window, with GPU rendering |
 | `--filesystem=xdg-run/hypr:ro` | Hyprland's IPC socket, to float, size, place and pin note windows. Without it, notes still work but open as tiled windows |
+| `--filesystem=xdg-config/xpad:ro` | Reading xpad's notes (`~/.config/xpad`) for the one-time import. Read-only |
 | `--talk-name=org.kde.StatusNotifierWatcher` | The tray icon: registering it with the tray (Waybar, KDE, …). The item is served under the app's unique bus name, so it needs no `--own-name` |
 
-The app needs no network, no home folder access and no portals beyond the defaults.
+The app needs no network and no portals beyond the defaults, and can't read
+your home folder beyond `~/.config/xpad`.
+
+> [!WARNING]
+> **The Hyprland socket.** Hyprland's IPC socket accepts any command, including starting programs (`dispatch exec`), and `:ro` doesn't limit that. So on Hyprland the sandbox doesn't protect you from the app: it can do anything you can do with `hyprctl`. That's the price of floating and pinning notes there. To keep the sandbox tight instead, run `flatpak override --user --nofilesystem=xdg-run/hypr ch.giosuel.RealerXpad`; notes then open as tiled windows on Hyprland.
 
 ## Submitting to Flathub
 

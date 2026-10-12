@@ -6,3 +6,5 @@ dist/
 __pycache__/
 *.egg-info/
 .flatpak-builder/
+.pytest_cache/
+.ruff_cache/

@@ -153,7 +153,7 @@ hl.bind("SUPER + SHIFT + N", hl.dsp.exec_cmd("realer-xpad toggle"))  -- hide / s
 Bug reports and PRs are welcome. The test suite includes UI tests that run in a throwaway headless sway session:
 
 ```sh
-cargo test                                   # unit tests
+cargo test                                   # unit tests (UI tests skip outside headless.sh)
 tools/headless.sh cargo test --test ui       # UI tests on a pure-Wayland compositor
 cargo clippy --all-targets -- -D warnings
 ```

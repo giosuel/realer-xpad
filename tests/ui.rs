@@ -699,12 +699,18 @@ fn tray_icon_registers_and_works(c: &Ctx) {
 type UiTest = (&'static str, fn(&Ctx));
 
 fn main() {
-    if std::env::var_os("WAYLAND_DISPLAY").is_none() && std::env::var_os("DISPLAY").is_none() {
-        println!("skipped: no display (run with tools/headless.sh)");
+    // Only inside tools/headless.sh: in a desktop session the tests would open
+    // notes and tray icons there.
+    if std::env::var_os("REALER_XPAD_HEADLESS").is_none() {
+        println!("skipped: run with tools/headless.sh");
         return;
     }
+    let data = tempfile::tempdir().unwrap();
     // SAFETY: set before any other thread exists.
-    unsafe { std::env::set_var("REALER_XPAD_NO_HYPR", "1") };
+    unsafe {
+        std::env::set_var("REALER_XPAD_NO_HYPR", "1");
+        std::env::set_var("REALER_XPAD_DATA", data.path());
+    }
     let app = App::new(None, false, None);
     app.register(); // runs startup on this thread
 

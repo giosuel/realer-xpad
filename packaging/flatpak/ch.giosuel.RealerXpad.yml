@@ -12,6 +12,8 @@ finish-args:
   - --device=dri
   # Hyprland's IPC socket, used to float, size, place and pin note windows.
   - --filesystem=xdg-run/hypr:ro
+  # Reading xpad's notes, for the one-time import.
+  - --filesystem=xdg-config/xpad:ro
   # The tray icon (StatusNotifierItem), registered under the app's own bus name.
   - --talk-name=org.kde.StatusNotifierWatcher
 build-options:
@@ -33,5 +35,5 @@ modules:
       # flathub-manifest.sh swaps this for the git tag of a release.
       - type: dir
         path: ../..
-        skip: [target, dist, site, .flatpak-builder]
+        skip: [target, dist, site, .flatpak-builder, .git, .venv, .pytest_cache, .ruff_cache]
       - cargo-sources.json

@@ -34,6 +34,18 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.3" date="2026-10-12">
+      <description>
+        <ul>
+          <li>Always-visible tool row: text, pen, highlighter, shapes and eraser, replacing the separate draw mode</li>
+          <li>New shapes: line, arrow, rectangle and ellipse</li>
+          <li>Keeps running in the background like xpad, with a tray icon to show, hide and create notes</li>
+          <li>Hyprland 0.55+ Lua config support, with an example in extras/hyprland.lua</li>
+          <li>Deleting a hidden note from the notes manager now asks right there</li>
+          <li>Clearer note colour button</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.2" date="2026-10-12">
       <description>
         <ul>

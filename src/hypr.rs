@@ -3,10 +3,18 @@
 //! Wayland does not let clients position their own windows, so on Hyprland we
 //! ask the compositor directly to float, move, resize and pin note windows, and
 //! read back where the user put them. On any other compositor this is inert.
+//!
+//! Since 0.55, Hyprland configured with `hyprland.lua` only accepts Lua
+//! dispatchers (`hl.dsp.window.pin({ ... })`), while older versions and
+//! `hyprland.conf` setups only accept the classic syntax (`pin address:0x...`).
+//! We send Lua first and switch to the classic syntax for good the first time
+//! Hyprland answers "Invalid dispatcher".
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
 use serde_json::Value;
@@ -21,14 +29,57 @@ fn socket_path() -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.exists())
 }
 
+/// A window command, sent in whichever syntax the running Hyprland accepts.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Command {
+    Float(String),
+    Resize(String, i32, i32),
+    Move(String, i32, i32),
+    Pin(String, bool),
+}
+
+impl Command {
+    /// For Hyprland >= 0.55 with a Lua config.
+    pub fn lua(&self) -> String {
+        match self {
+            Command::Float(a) => format!(r#"hl.dsp.window.float({{ window = "address:{a}", action = "enable" }})"#),
+            Command::Resize(a, w, h) => {
+                format!(r#"hl.dsp.window.resize({{ window = "address:{a}", x = {w}, y = {h} }})"#)
+            }
+            Command::Move(a, x, y) => format!(r#"hl.dsp.window.move({{ window = "address:{a}", x = {x}, y = {y} }})"#),
+            Command::Pin(a, on) => {
+                let action = if *on { "enable" } else { "disable" };
+                format!(r#"hl.dsp.window.pin({{ window = "address:{a}", action = "{action}" }})"#)
+            }
+        }
+    }
+
+    /// For older Hyprland, or newer ones still using `hyprland.conf`.
+    pub fn classic(&self) -> String {
+        match self {
+            Command::Float(a) => format!("setfloating address:{a}"),
+            Command::Resize(a, w, h) => format!("resizewindowpixel exact {w} {h},address:{a}"),
+            Command::Move(a, x, y) => format!("movewindowpixel exact {x} {y},address:{a}"),
+            // The classic pin only toggles; callers check the current state first.
+            Command::Pin(a, _) => format!("pin address:{a}"),
+        }
+    }
+}
+
+// 0: not known yet.
+const SYNTAX_LUA: u8 = 1;
+const SYNTAX_CLASSIC: u8 = 2;
+
 #[derive(Clone, Debug)]
 pub struct Hyprland {
     pub socket_path: PathBuf,
+    /// Which dispatcher syntax works, shared by all clones.
+    syntax: Arc<AtomicU8>,
 }
 
 impl Hyprland {
     pub fn new(socket_path: impl Into<PathBuf>) -> Self {
-        Hyprland { socket_path: socket_path.into() }
+        Hyprland { socket_path: socket_path.into(), syntax: Arc::default() }
     }
 
     pub fn detect() -> Option<Self> {
@@ -58,17 +109,34 @@ impl Hyprland {
             .find(|c| c["initialTitle"] == initial_title && pid.is_none_or(|pid| c["pid"].as_u64() == Some(pid.into())))
     }
 
-    pub fn batch(&self, commands: &[String]) -> bool {
-        let message: Vec<String> = commands.iter().map(|c| format!("dispatch {c}")).collect();
-        self.request(&format!("[[BATCH]]{}", message.join(";"))).is_ok_and(|r| r.contains("ok"))
+    /// Send `commands` in one request. True if Hyprland accepted all of them.
+    pub fn batch(&self, commands: &[Command]) -> bool {
+        if self.syntax.load(Ordering::Relaxed) != SYNTAX_CLASSIC {
+            let Some(replies) = self.dispatch(commands.iter().map(Command::lua)) else { return false };
+            if replies.iter().all(|r| r.starts_with("ok")) {
+                self.syntax.store(SYNTAX_LUA, Ordering::Relaxed);
+                return true;
+            }
+            let lua_unknown = replies.iter().any(|r| r.contains("Invalid dispatcher"));
+            if !lua_unknown || self.syntax.load(Ordering::Relaxed) == SYNTAX_LUA {
+                return false;
+            }
+            self.syntax.store(SYNTAX_CLASSIC, Ordering::Relaxed);
+        }
+        self.dispatch(commands.iter().map(Command::classic)).is_some_and(|r| r.iter().all(|r| r.starts_with("ok")))
+    }
+
+    /// One `[[BATCH]]` request; returns one reply per command.
+    fn dispatch(&self, commands: impl Iterator<Item = String>) -> Option<Vec<String>> {
+        let message: Vec<String> = commands.map(|c| format!("dispatch {c}")).collect();
+        let reply = self.request(&format!("[[BATCH]]{}", message.join(";"))).ok()?;
+        Some(reply.split("\n\n\n").map(|r| r.trim().to_string()).collect())
     }
 
     pub fn place(&self, address: &str, pos: Option<(i32, i32)>, width: i32, height: i32) -> bool {
-        let target = format!("address:{address}");
-        let mut commands =
-            vec![format!("setfloating {target}"), format!("resizewindowpixel exact {width} {height},{target}")];
+        let mut commands = vec![Command::Float(address.into()), Command::Resize(address.into(), width, height)];
         if let Some((x, y)) = pos {
-            commands.push(format!("movewindowpixel exact {x} {y},{target}"));
+            commands.push(Command::Move(address.into(), x, y));
         }
         self.batch(&commands)
     }
@@ -77,10 +145,10 @@ impl Hyprland {
         if client["pinned"].as_bool().unwrap_or(false) == pinned {
             return true;
         }
-        let target = format!("address:{}", client["address"].as_str().unwrap_or_default());
-        let mut commands = vec![format!("pin {target}")];
+        let address = client["address"].as_str().unwrap_or_default().to_string();
+        let mut commands = vec![Command::Pin(address.clone(), pinned)];
         if pinned && !client["floating"].as_bool().unwrap_or(false) {
-            commands.insert(0, format!("setfloating {target}"));
+            commands.insert(0, Command::Float(address));
         }
         self.batch(&commands)
     }
@@ -95,9 +163,11 @@ impl Hyprland {
 mod tests {
     use super::*;
     use std::os::unix::net::UnixListener;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Mutex;
 
-    /// Minimal stand-in for Hyprland's request socket.
+    /// Minimal stand-in for Hyprland's request socket. `lua` picks how it
+    /// answers dispatches, like Hyprland >= 0.55 with a Lua config (`true`) or
+    /// an older Hyprland / `hyprland.conf` setup (`false`).
     struct Fake {
         requests: Arc<Mutex<Vec<String>>>,
         _dir: tempfile::TempDir,
@@ -109,7 +179,20 @@ mod tests {
                            "size": [300, 250], "floating": false, "pinned": false})
     }
 
-    fn fake() -> Fake {
+    /// Hyprland's reply to one `dispatch` (see `dispatchRequest` in Hyprland's HyprCtl.cpp).
+    fn reply_to(dispatch: &str, lua: bool) -> String {
+        let cmd = dispatch.trim().trim_start_matches("dispatch ");
+        match (lua, cmd.starts_with("hl.")) {
+            _ if cmd.contains("0xdead") => "window not found".into(),
+            (true, true) | (false, false) => "ok".into(),
+            (true, false) => "[string \"return hl.dispatch(...)\"]: syntax error\n\n → Note: dispatch in lua is \
+                              a shorthand for hl.dispatch(...), your syntax might need to be updated."
+                .into(),
+            (false, true) => "Invalid dispatcher".into(),
+        }
+    }
+
+    fn fake(lua: bool) -> Fake {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(".socket.sock");
         let listener = UnixListener::bind(&path).unwrap();
@@ -124,7 +207,11 @@ mod tests {
                 let mut buf = [0u8; 65536];
                 let n = conn.read(&mut buf).unwrap_or(0);
                 let msg = String::from_utf8_lossy(&buf[..n]).to_string();
-                let reply = if msg == "j/clients" { clients.clone() } else { "ok".into() };
+                let reply = match msg.strip_prefix("[[BATCH]]") {
+                    _ if msg == "j/clients" => clients.clone(),
+                    Some(batch) => batch.split(';').map(|d| reply_to(d, lua)).collect::<Vec<_>>().join("\n\n\n"),
+                    None => reply_to(&msg, lua),
+                };
                 log.lock().unwrap().push(msg);
                 let _ = conn.write_all(reply.as_bytes());
             }
@@ -132,9 +219,15 @@ mod tests {
         Fake { requests, hypr: Hyprland::new(path), _dir: dir }
     }
 
+    impl Fake {
+        fn sent(&self) -> Vec<String> {
+            self.requests.lock().unwrap().clone()
+        }
+    }
+
     #[test]
     fn find_by_initial_title() {
-        let f = fake();
+        let f = fake(true);
         assert_eq!(f.hypr.find("realer-xpad-1", None).unwrap()["address"], "0xabc");
         assert!(f.hypr.find("realer-xpad-1", Some(7)).is_none());
         assert!(f.hypr.find("missing", None).is_none());
@@ -142,35 +235,57 @@ mod tests {
     }
 
     #[test]
-    fn place_sends_batch() {
-        let f = fake();
+    fn place_sends_lua_dispatchers() {
+        let f = fake(true);
         assert!(f.hypr.place("0xabc", Some((10, 20)), 300, 250));
         assert_eq!(
-            f.requests.lock().unwrap().last().unwrap(),
+            f.sent(),
+            [
+                r#"[[BATCH]]dispatch hl.dsp.window.float({ window = "address:0xabc", action = "enable" });dispatch hl.dsp.window.resize({ window = "address:0xabc", x = 300, y = 250 });dispatch hl.dsp.window.move({ window = "address:0xabc", x = 10, y = 20 })"#
+            ]
+        );
+    }
+
+    #[test]
+    fn falls_back_to_classic_dispatchers_once() {
+        let f = fake(false);
+        assert!(f.hypr.place("0xabc", Some((10, 20)), 300, 250));
+        assert_eq!(f.sent().len(), 2, "Lua first, then the classic syntax");
+        assert_eq!(
+            f.sent()[1],
             "[[BATCH]]dispatch setfloating address:0xabc;\
              dispatch resizewindowpixel exact 300 250,address:0xabc;\
              dispatch movewindowpixel exact 10 20,address:0xabc"
         );
+        assert!(f.hypr.clone().place("0xabc", None, 300, 250), "clones share what was learned");
+        assert_eq!(f.sent().len(), 3, "no more Lua attempts");
+        assert!(!f.sent()[2].contains("hl.dsp") && !f.sent()[2].contains("movewindowpixel"));
     }
 
     #[test]
-    fn place_without_position_only_resizes() {
-        let f = fake();
-        f.hypr.place("0xabc", None, 300, 250);
-        assert!(!f.requests.lock().unwrap().last().unwrap().contains("movewindowpixel"));
+    fn failures_do_not_switch_syntax() {
+        let f = fake(true);
+        assert!(!f.hypr.place("0xdead", None, 300, 250));
+        assert_eq!(f.sent().len(), 1, "a missing window is not a reason to try the classic syntax");
+        assert!(f.hypr.place("0xabc", None, 300, 250));
+        assert!(f.sent()[1].contains("hl.dsp.window.float"));
     }
 
     #[test]
     fn pin_floats_first_and_is_idempotent() {
-        let f = fake();
+        let f = fake(true);
         assert!(f.hypr.set_pinned(&client(), true));
         assert_eq!(
-            f.requests.lock().unwrap().last().unwrap(),
-            "[[BATCH]]dispatch setfloating address:0xabc;dispatch pin address:0xabc"
+            f.sent().last().unwrap(),
+            r#"[[BATCH]]dispatch hl.dsp.window.float({ window = "address:0xabc", action = "enable" });dispatch hl.dsp.window.pin({ window = "address:0xabc", action = "enable" })"#
         );
-        let n = f.requests.lock().unwrap().len();
+        let n = f.sent().len();
         assert!(f.hypr.set_pinned(&client(), false)); // already unpinned: no request
-        assert_eq!(f.requests.lock().unwrap().len(), n);
+        assert_eq!(f.sent().len(), n);
+
+        let f = fake(false);
+        assert!(f.hypr.set_pinned(&client(), true));
+        assert_eq!(f.sent().last().unwrap(), "[[BATCH]]dispatch setfloating address:0xabc;dispatch pin address:0xabc");
     }
 
     #[test]
@@ -178,6 +293,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let h = Hyprland::new(dir.path().join("nope.sock"));
         assert!(h.clients().is_empty());
-        assert!(!h.batch(&["pin".into()]));
+        assert!(!h.batch(&[Command::Pin("0xabc".into(), true)]));
     }
 }

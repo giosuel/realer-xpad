@@ -20,10 +20,37 @@ and **tiles** them. One rule fixes that.
 
 ## Setup
 
-Add these lines to `~/.config/hypr/hyprland.conf`, or `source` the ready-made
-[`extras/hyprland.conf`](https://github.com/giosuel/realer-xpad/blob/main/extras/hyprland.conf):
+Since 0.55, Hyprland is configured in Lua (`~/.config/hypr/hyprland.lua`), and
+the older `hyprland.conf` syntax is on its way out. Pick the tab for your setup.
+The ready-made files are
+[`extras/hyprland.lua`](https://github.com/giosuel/realer-xpad/blob/main/extras/hyprland.lua)
+and [`extras/hyprland.conf`](https://github.com/giosuel/realer-xpad/blob/main/extras/hyprland.conf).
 
-=== "Hyprland 0.53+"
+=== "Lua (0.55+)"
+
+    ```lua
+    local notes = [[^(ch\.giosuel\.RealerXpad)$]]
+
+    hl.window_rule({
+        match = { class = notes },
+        float = true,
+        border_size = 0,
+        rounding = 14,
+        no_blur = true,
+    })
+
+    hl.on("hyprland.start", function()
+        hl.exec_cmd("realer-xpad")
+    end)
+
+    hl.bind("SUPER + N", hl.dsp.exec_cmd("realer-xpad new"))              -- new note
+    hl.bind("SUPER + SHIFT + N", hl.dsp.exec_cmd("realer-xpad toggle"))   -- hide / show all notes
+    hl.bind("SUPER + ALT + N", hl.dsp.exec_cmd("realer-xpad manager"))    -- notes manager
+    ```
+
+    That's everything: rules, autostart and keybinds.
+
+=== "hyprland.conf 0.53+"
 
     ```ini
     windowrule = match:class ^(ch\.giosuel\.RealerXpad)$, float on
@@ -50,7 +77,7 @@ Add these lines to `~/.config/hypr/hyprland.conf`, or `source` the ready-made
     windowrulev2 = noblur, class:^(ch\.giosuel\.RealerXpad)$
     ```
 
-Then start it with Hyprland and bind it to some keys:
+With `hyprland.conf`, then start it with Hyprland and bind it to some keys:
 
 ```ini
 exec-once = realer-xpad
@@ -62,7 +89,8 @@ bind = SUPER ALT, N, exec, realer-xpad manager    # notes manager
 
 !!! note "Installed as a Flatpak?"
     Use `flatpak run ch.giosuel.RealerXpad` wherever these lines say
-    `realer-xpad`, e.g. `bind = SUPER, N, exec, flatpak run ch.giosuel.RealerXpad new`.
+    `realer-xpad`, e.g. `hl.bind("SUPER + N", hl.dsp.exec_cmd("flatpak run ch.giosuel.RealerXpad new"))`
+    or `bind = SUPER, N, exec, flatpak run ch.giosuel.RealerXpad new`.
     The Flatpak may read Hyprland's socket, so pinning and placement work the same.
 
 Reload with `hyprctl reload`, and you're set.
@@ -89,7 +117,9 @@ Hides gracefully
     lets the app match a note to its window even after the title changes to
     your note's heading. It needs nothing beyond the
     `HYPRLAND_INSTANCE_SIGNATURE` socket Hyprland already provides, and not
-    even the `hyprctl` binary.
+    even the `hyprctl` binary. It speaks both dispatcher syntaxes: Lua
+    (`hl.dsp.window.pin(...)`) for Hyprland 0.55+ with a Lua config, and the
+    classic one for older versions and `hyprland.conf` setups.
 
 ## Turning it off
 

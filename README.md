@@ -106,19 +106,18 @@ Then launch **Realer Xpad** from your app launcher, or run `realer-xpad`. Notes 
 
 ## 🌊 Hyprland
 
-Add the rules from [`extras/hyprland.conf`](extras/hyprland.conf) so notes float instead of tiling:
+Add the rules from [`extras/hyprland.lua`](extras/hyprland.lua) to `~/.config/hypr/hyprland.lua` so notes float instead of tiling:
 
-```ini
-windowrule = match:class ^(ch\.giosuel\.RealerXpad)$, float on
-windowrule = match:class ^(ch\.giosuel\.RealerXpad)$, border_size 0
+```lua
+hl.window_rule({ match = { class = [[^(ch\.giosuel\.RealerXpad)$]] }, float = true, border_size = 0 })
 
-exec-once = realer-xpad
-bind = SUPER, N, exec, realer-xpad new           # new note
-bind = SUPER SHIFT, N, exec, realer-xpad toggle  # hide / show all
+hl.on("hyprland.start", function() hl.exec_cmd("realer-xpad") end)
+hl.bind("SUPER + N", hl.dsp.exec_cmd("realer-xpad new"))             -- new note
+hl.bind("SUPER + SHIFT + N", hl.dsp.exec_cmd("realer-xpad toggle"))  -- hide / show all
 ```
 
 > [!TIP]
-> On Hyprland older than 0.53, use the legacy rule syntax included at the bottom of that file.
+> Still on `hyprland.conf` (Hyprland 0.54 or older, or not migrated yet)? Use [`extras/hyprland.conf`](extras/hyprland.conf) instead. It also has the rule syntax for Hyprland older than 0.53.
 
 ## ⌨️ Shortcuts
 

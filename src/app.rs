@@ -201,10 +201,9 @@ impl App {
     }
 
     pub fn quit_app(&self) {
-        for win in self.windows() {
-            if win.window.is_visible() {
-                self.sync_geometry(&win);
-            }
+        let windows = self.windows();
+        self.sync_visible_geometry(&windows);
+        for win in windows {
             win.save_now();
         }
         self.0.tray.borrow_mut().take();
@@ -334,12 +333,11 @@ impl App {
 
     /// Temporarily hide windows; notes stay "open" for the next show/toggle.
     pub fn hide_all(&self) {
-        for win in self.windows() {
-            if win.window.is_visible() {
-                self.sync_geometry(&win);
-                win.save_now();
-                win.window.set_visible(false);
-            }
+        let windows: Vec<_> = self.windows().into_iter().filter(|w| w.window.is_visible()).collect();
+        self.sync_visible_geometry(&windows);
+        for win in windows {
+            win.save_now();
+            win.window.set_visible(false);
         }
     }
 
@@ -580,24 +578,39 @@ impl App {
         }
     }
 
-    /// Copy the window's compositor geometry into its note. Returns true if changed.
-    pub fn sync_geometry(&self, win: &NoteWindow) -> bool {
-        let Some(hypr) = self.hypr() else { return false };
-        let Some(client) = hypr.find(&win.initial_title(), None) else { return false };
-        let (x, y, w, h) = Hyprland::geometry(&client);
-        let mut note = win.note.borrow_mut();
-        if (note.x, note.y, note.width, note.height) == (Some(x), Some(y), w, h) {
-            return false;
+    /// Copy the window's compositor geometry into its note.
+    pub fn sync_geometry(&self, win: &NoteWindow) {
+        self.sync_visible_geometry(std::slice::from_ref(win));
+    }
+
+    /// Copy the compositor geometry of the visible `windows` into their notes,
+    /// with one request to Hyprland. Returns the windows that changed.
+    fn sync_visible_geometry<'a>(&self, windows: &'a [NoteWindow]) -> Vec<&'a NoteWindow> {
+        let Some(hypr) = self.hypr() else { return Vec::new() };
+        let visible: Vec<_> = windows.iter().filter(|w| w.window.is_visible()).collect();
+        if visible.is_empty() {
+            return Vec::new();
         }
-        (note.x, note.y, note.width, note.height) = (Some(x), Some(y), w, h);
-        true
+        let clients = hypr.clients();
+        visible
+            .into_iter()
+            .filter(|win| {
+                let Some(client) = Hyprland::find_in(&clients, &win.initial_title(), None) else { return false };
+                let (x, y, w, h) = Hyprland::geometry(client);
+                let mut note = win.note.borrow_mut();
+                if w <= 0 || h <= 0 || (note.x, note.y, note.width, note.height) == (Some(x), Some(y), w, h) {
+                    return false;
+                }
+                (note.x, note.y, note.width, note.height) = (Some(x), Some(y), w, h);
+                true
+            })
+            .collect()
     }
 
     fn poll_geometry(&self) {
-        for win in self.windows() {
-            if win.window.is_visible() && self.sync_geometry(&win) {
-                self.save_note(&win.note);
-            }
+        let windows = self.windows();
+        for win in self.sync_visible_geometry(&windows) {
+            self.save_note(&win.note);
         }
     }
 }

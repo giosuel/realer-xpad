@@ -40,7 +40,7 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: ShellCheck
-        run: shellcheck install.sh tools/headless.sh
+        run: shellcheck install.sh tools/*.sh packaging/*/*.sh
 
   test:
     name: Test (GTK ${{ matrix.distro }})

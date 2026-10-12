@@ -21,6 +21,13 @@ On NixOS or with home-manager, add the flake as an input and use
 
 ## Submitting to nixpkgs
 
+Not yet. nixpkgs only takes packages with a real user base ("if it's a niche of 5
+people it's probably too small") that aren't "too immature", and its
+[contributing guide](https://github.com/NixOS/nixpkgs/blob/master/CONTRIBUTING.md)
+asks for AI-assisted work to be reviewed by a responsible person and disclosed with
+an `Assisted-by:` commit trailer (a `Co-authored-by:` trailer doesn't count). Until
+then, the flake above is the way to install it with Nix. When it's time:
+
 1. Add yourself to `maintainers/maintainer-list.nix` in a separate commit, and list
    yourself in `meta.maintainers` (nixpkgs requires a maintainer for new packages).
 2. Copy the package:
@@ -31,7 +38,7 @@ On NixOS or with home-manager, add the flake as an input and use
     ```
 
 3. Check it builds: `nix-build -A realer-xpad`. To review it: `nixpkgs-review wip`.
-4. Commit as `realer-xpad: init at 0.1.1` and open a PR against `master`.
+4. Commit as `realer-xpad: init at <version>`, with an `Assisted-by:` trailer naming the AI tool and model, and open a PR against `master`. In the description, say what the app is and why it belongs in nixpkgs.
 
 After that, nixpkgs' update bot (r-ryantm) opens version bumps on its own
 (`passthru.updateScript`). To update this copy by hand, run

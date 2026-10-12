@@ -75,7 +75,9 @@ Every note is a `.md` file in `~/.local/share/realer-xpad`, so you can grep, syn
 
 ## 🚀 Install
 
-**AppImage (easiest)** – download `Realer_Xpad-*-x86_64.AppImage` from the [latest release](https://github.com/giosuel/realer-xpad/releases), then:
+**Arch Linux** – from the AUR: `yay -S realer-xpad-bin` (prebuilt) or `yay -S realer-xpad` (from source).
+
+**AppImage (any distro)** – download `Realer_Xpad-*-x86_64.AppImage` from the [latest release](https://github.com/giosuel/realer-xpad/releases), then:
 
 ```sh
 chmod +x Realer_Xpad-*-x86_64.AppImage && ./Realer_Xpad-*-x86_64.AppImage

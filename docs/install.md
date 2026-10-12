@@ -8,6 +8,16 @@ Realer Xpad is a single, small **Rust** binary. The only things it needs at
 runtime are **GTK ≥ 4.16** and **libadwaita ≥ 1.5**, which every current
 desktop distro already ships.
 
+## Arch Linux (AUR)
+
+```sh
+yay -S realer-xpad-bin   # prebuilt binary
+yay -S realer-xpad       # or build from source (x86_64 and aarch64)
+```
+
+Any AUR helper works (`paru`, `yay`, …). Updates come with your normal system
+upgrades.
+
 ## Option A: AppImage (recommended)
 
 One file with GTK 4 and libadwaita bundled. Nothing to install, and it runs even

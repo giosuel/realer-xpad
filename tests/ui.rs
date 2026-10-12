@@ -437,6 +437,27 @@ fn declining_xpad_import_starts_fresh_and_never_asks_again(c: &Ctx) {
     assert_eq!(visible_texts(&c.app), [""]);
 }
 
+fn deleting_a_hidden_note_from_the_manager_asks_there(c: &Ctx) {
+    let dir = tempfile::tempdir().unwrap();
+    let store = NoteStore::new(dir.path()).unwrap();
+    let mut note = Note { text: "Old shopping list".into(), visible: false, ..Default::default() };
+    store.save(&mut note, true).unwrap();
+    c.app.load_notes(store);
+    c.app.open_manager();
+    let m = c.app.manager().unwrap();
+    m.delete_button(&note.id).expect("a delete button").emit_clicked();
+    pump(50);
+    let dialog: adw::AlertDialog =
+        m.window.visible_dialog().expect("the question appears over the manager").downcast().unwrap();
+    assert!(c.app.windows().is_empty(), "no hidden note window was opened to ask");
+    dialog.emit_by_name::<()>("response", &[&"delete"]);
+    pump(50);
+    assert!(c.app.notes().is_empty());
+    assert!(m.row_ids().is_empty());
+    assert!(dir.path().join("trash").join(format!("{}.md", note.id)).exists());
+    m.window.close();
+}
+
 /// A named UI test.
 type UiTest = (&'static str, fn(&Ctx));
 
@@ -474,6 +495,7 @@ fn main() {
         ("read_view_checkbox_click", read_view_checkbox_click),
         ("read_view_text_click_enters_edit_at_position", read_view_text_click_enters_edit_at_position),
         ("manager_lists_and_filters", manager_lists_and_filters),
+        ("deleting_a_hidden_note_from_the_manager_asks_there", deleting_a_hidden_note_from_the_manager_asks_there),
         ("import_xpad_shows_imported_notes", import_xpad_shows_imported_notes),
         ("first_start_offers_xpad_import", first_start_offers_xpad_import),
         (

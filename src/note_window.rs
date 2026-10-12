@@ -685,26 +685,9 @@ impl NoteWindow {
     }
 
     pub fn confirm_delete(&self) {
-        let Some(app) = self.app() else { return };
-        if self.note.borrow().is_empty() {
-            app.delete_note(&self.id());
-            return;
+        if let Some(app) = self.app() {
+            app.confirm_delete(&self.id(), self.window.upcast_ref());
         }
-        let dialog = adw::AlertDialog::new(Some("Delete Note?"), Some("The note will be moved to the trash folder."));
-        dialog.add_response("cancel", "Cancel");
-        dialog.add_response("delete", "Delete");
-        dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
-        dialog.set_default_response(Some("cancel"));
-        let id = self.id();
-        let app = Rc::downgrade(&app.0);
-        dialog.connect_response(None, move |_, response| {
-            if response == "delete"
-                && let Some(app) = app.upgrade()
-            {
-                App(app).delete_note(&id);
-            }
-        });
-        dialog.present(Some(&self.window));
     }
 }
 

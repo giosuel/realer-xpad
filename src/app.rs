@@ -334,6 +334,30 @@ impl App {
         self.changed();
     }
 
+    /// Delete a note, asking first unless it's empty. The question appears over
+    /// `parent`, the window the user asked from (the note or the notes manager).
+    pub fn confirm_delete(&self, id: &str, parent: &gtk::Widget) {
+        let Some(empty) = self.0.notes.borrow().get(id).map(|n| n.borrow().is_empty()) else { return };
+        if empty {
+            self.delete_note(id);
+            return;
+        }
+        let dialog = adw::AlertDialog::new(Some("Delete Note?"), Some("The note will be moved to the trash folder."));
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("delete", "Delete");
+        dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+        dialog.set_default_response(Some("cancel"));
+        let (id, app) = (id.to_string(), Rc::downgrade(&self.0));
+        dialog.connect_response(None, move |_, response| {
+            if response == "delete"
+                && let Some(app) = app.upgrade()
+            {
+                App(app).delete_note(&id);
+            }
+        });
+        dialog.present(Some(parent));
+    }
+
     pub fn save_note(&self, note: &Rc<RefCell<Note>>, touch: bool) {
         let id = note.borrow().id.clone();
         if !self.0.notes.borrow().contains_key(&id) {

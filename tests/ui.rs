@@ -372,8 +372,8 @@ fn delete_empty_note_skips_confirmation(c: &Ctx) {
 fn existing_notes_open_on_show(c: &Ctx) {
     let dir = tempfile::tempdir().unwrap();
     let store = NoteStore::new(dir.path()).unwrap();
-    store.save(&mut Note { text: "open".into(), ..Default::default() }, true).unwrap();
-    store.save(&mut Note { text: "closed".into(), visible: false, ..Default::default() }, true).unwrap();
+    store.save(&mut Note { text: "open".into(), ..Default::default() }).unwrap();
+    store.save(&mut Note { text: "closed".into(), visible: false, ..Default::default() }).unwrap();
     c.app.load_notes(store);
     c.app.run_command("show");
     let shown: Vec<String> =
@@ -514,7 +514,7 @@ fn deleting_a_hidden_note_from_the_manager_asks_there(c: &Ctx) {
     let dir = tempfile::tempdir().unwrap();
     let store = NoteStore::new(dir.path()).unwrap();
     let mut note = Note { text: "Old shopping list".into(), visible: false, ..Default::default() };
-    store.save(&mut note, true).unwrap();
+    store.save(&mut note).unwrap();
     c.app.load_notes(store);
     c.app.open_manager();
     let m = c.app.manager().unwrap();

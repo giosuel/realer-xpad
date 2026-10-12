@@ -300,7 +300,7 @@ impl App {
         let id = note.id.clone();
         let note = Rc::new(RefCell::new(note));
         self.0.notes.borrow_mut().insert(id.clone(), note.clone());
-        self.save_note(&note, false);
+        self.save_note(&note);
         if let Some(win) = self.window_for(&id) {
             win.show_note();
             win.editor.show_edit(None);
@@ -351,7 +351,9 @@ impl App {
         if let Some(store) = self.0.store.borrow().as_ref()
             && let Err(err) = store.delete(id)
         {
+            // Keep showing it: it would come back on the next start anyway.
             eprintln!("realer-xpad: could not delete note {id}: {err}");
+            return;
         }
         self.0.notes.borrow_mut().remove(id);
         let win = self.0.windows.borrow_mut().remove(id);
@@ -385,17 +387,22 @@ impl App {
         dialog.present(Some(parent));
     }
 
-    pub fn save_note(&self, note: &Rc<RefCell<Note>>, touch: bool) {
+    pub fn save_note(&self, note: &Rc<RefCell<Note>>) {
         let id = note.borrow().id.clone();
         if !self.0.notes.borrow().contains_key(&id) {
             return; // deleted meanwhile
         }
-        if let Some(store) = self.0.store.borrow().as_ref()
-            && let Err(err) = store.save(&mut note.borrow_mut(), touch)
-        {
-            eprintln!("realer-xpad: could not save note {id}: {err}");
+        let wrote = match self.0.store.borrow().as_ref().map(|store| store.save(&mut note.borrow_mut())) {
+            Some(Ok(wrote)) => wrote,
+            Some(Err(err)) => {
+                eprintln!("realer-xpad: could not save note {id}: {err}");
+                false
+            }
+            None => false,
+        };
+        if wrote {
+            self.changed();
         }
-        self.changed();
     }
 
     fn changed(&self) {
@@ -589,7 +596,7 @@ impl App {
     fn poll_geometry(&self) {
         for win in self.windows() {
             if win.window.is_visible() && self.sync_geometry(&win) {
-                self.save_note(&win.note, false);
+                self.save_note(&win.note);
             }
         }
     }

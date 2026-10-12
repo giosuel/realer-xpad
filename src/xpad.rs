@@ -17,7 +17,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-use crate::store::{DEFAULT_SIZE, Note, NoteStore, now};
+use crate::store::{DEFAULT_SIZE, Note, NoteStore, atomic_write, now};
 
 /// xpad's built-in note colour (a light yellow), used when nothing else is set.
 const XPAD_DEFAULT_BACK: (u8, u8, u8) = (255, 238, 153);
@@ -129,7 +129,8 @@ pub fn read_notes(dir: &Path) -> Vec<XpadNote> {
                 return None; // xpad skips backup files too
             }
             let info = fs::read_to_string(entry.path()).ok()?;
-            let content = value(&info, "content").map(|c| dir.join(c));
+            // Only a file next to the info file, like xpad writes it.
+            let content = value(&info, "content").filter(|c| is_plain_name(c)).map(|c| dir.join(c));
             let text = content.as_ref().and_then(|c| fs::read_to_string(c).ok()).unwrap_or_default();
             let modified = content
                 .and_then(|c| fs::metadata(c).ok()?.modified().ok())
@@ -204,13 +205,19 @@ pub fn import(store: &NoteStore, dir: &Path) -> io::Result<Vec<Note>> {
     let mut done: Vec<String> = imported(store).into_iter().collect();
     for xpad in pending(store, dir) {
         let mut note = xpad.to_note();
-        store.save(&mut note, false)?;
+        store.save(&mut note)?;
+        // Record each note as soon as it's saved, so a failure halfway
+        // doesn't import the first ones twice next time.
         done.push(xpad.info);
+        done.sort();
+        atomic_write(&store.dir.join(MARKER), &done.iter().map(|d| format!("{d}\n")).collect::<String>())?;
         notes.push(note);
     }
-    done.sort();
-    fs::write(store.dir.join(MARKER), done.iter().map(|d| format!("{d}\n")).collect::<String>())?;
     Ok(notes)
+}
+
+fn is_plain_name(name: &str) -> bool {
+    !name.is_empty() && name != "." && name != ".." && !name.contains('/')
 }
 
 #[cfg(test)]
@@ -354,6 +361,16 @@ mod tests {
         assert_eq!(pending(&store, dir.path()).len(), 1);
         assert_eq!(import(&store, dir.path()).unwrap()[0].text, "New one");
         assert_eq!(store.load_all().len(), 2);
+    }
+
+    #[test]
+    fn content_outside_the_xpad_folder_is_ignored() {
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("secret");
+        fs::write(&secret, "not a note").unwrap();
+        let dir =
+            xpad_dir(&[("AAAAAA", "", &info(secret.to_str().unwrap(), "")), ("BBBBBB", "", &info("../secret", ""))]);
+        assert!(read_notes(dir.path()).iter().all(|n| n.text.is_empty()));
     }
 
     #[test]

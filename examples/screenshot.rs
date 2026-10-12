@@ -126,7 +126,7 @@ fn main() {
     let dir = tempfile_dir();
     let store = NoteStore::new(&dir).unwrap();
     for mut note in demo_notes() {
-        store.save(&mut note, false).unwrap();
+        store.save(&mut note).unwrap();
     }
     let app = App::new(Some(store), false, Some(realer_xpad::APP_ID));
     let shots = Rc::new(RefCell::new(Vec::new()));

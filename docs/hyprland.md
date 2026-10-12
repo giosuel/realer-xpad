@@ -60,6 +60,11 @@ bind = SUPER SHIFT, N, exec, realer-xpad toggle   # hide / show all notes
 bind = SUPER ALT, N, exec, realer-xpad manager    # notes manager
 ```
 
+!!! note "Installed as a Flatpak?"
+    Use `flatpak run ch.giosuel.RealerXpad` wherever these lines say
+    `realer-xpad`, e.g. `bind = SUPER, N, exec, flatpak run ch.giosuel.RealerXpad new`.
+    The Flatpak may read Hyprland's socket, so pinning and placement work the same.
+
 Reload with `hyprctl reload`, and you're set.
 
 ## What the integration does

@@ -9,7 +9,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use gtk::prelude::*;
+use adw::prelude::*;
 use gtk::{glib, graphene};
 use realer_xpad::app::App;
 use realer_xpad::drawing::Stroke;
@@ -53,6 +53,7 @@ impl Ctx {
     fn new(app: &App) -> Self {
         let dir = tempfile::tempdir().unwrap();
         app.load_notes(NoteStore::new(dir.path()).unwrap());
+        app.set_xpad_dir(&dir.path().join("no-xpad")); // never the real ~/.config/xpad
         Ctx { app: app.clone(), _dir: dir }
     }
 
@@ -345,7 +346,95 @@ fn manager_lists_and_filters(c: &Ctx) {
     m.search.set_text("nothing-matches");
     m.refresh();
     assert_eq!(m.stack.visible_child_name().unwrap(), "empty");
-    m.window.destroy();
+    m.window.close();
+    pump(20);
+    assert!(c.app.manager().is_none(), "a closed manager is forgotten");
+    c.app.open_manager();
+    let reopened = c.app.manager().unwrap();
+    assert!(reopened.window.is_visible());
+    assert_eq!(reopened.row_ids().len(), 2, "and a fresh one lists the notes");
+    reopened.window.close();
+}
+
+// -- xpad import ---------------------------------------------------------------
+
+/// Two xpad notes: a visible one in xpad's default yellow, a hidden light blue one.
+fn xpad_dir_with_notes() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let pads = [
+        ("AAAAAA", "Buy milk", "follow_color 1\nhidden 0"),
+        ("BBBBBB", "Old idea", "follow_color 0\nback rgb(150,200,255)\nhidden 1"),
+    ];
+    for (id, text, info) in pads {
+        std::fs::write(dir.path().join(format!("content-{id}")), text).unwrap();
+        let info = format!("width 320\nheight 240\n{info}\ncontent content-{id}\n");
+        std::fs::write(dir.path().join(format!("info-{id}")), info).unwrap();
+    }
+    dir
+}
+
+fn visible_texts(app: &App) -> Vec<String> {
+    app.windows().iter().filter(|w| w.window.is_visible()).map(|w| w.note.borrow().text.clone()).collect()
+}
+
+fn import_xpad_shows_imported_notes(c: &Ctx) {
+    let xpad = xpad_dir_with_notes();
+    c.app.set_xpad_dir(xpad.path());
+    assert_eq!(c.app.import_xpad().unwrap(), 2);
+    assert_eq!(visible_texts(&c.app), ["Buy milk"]);
+    let mut notes: Vec<(String, String, bool, i32)> = c
+        .app
+        .notes()
+        .iter()
+        .map(|n| {
+            let n = n.borrow();
+            (n.text.clone(), n.color.clone(), n.visible, n.width)
+        })
+        .collect();
+    notes.sort();
+    assert_eq!(notes, [("Buy milk".into(), "yellow".into(), true, 320), ("Old idea".into(), "sky".into(), false, 320)]);
+    assert_eq!(c.app.import_xpad().unwrap(), 0, "importing again adds nothing");
+}
+
+/// The offer shown on a first start, as a dialog over the notes manager.
+fn xpad_offer(app: &App) -> adw::AlertDialog {
+    let manager = app.manager().expect("the notes manager opens behind the offer");
+    manager.window.visible_dialog().expect("the import offer is shown").downcast().unwrap()
+}
+
+fn first_start_offers_xpad_import(c: &Ctx) {
+    let xpad = xpad_dir_with_notes();
+    c.app.set_xpad_dir(xpad.path());
+    c.app.run_command("show", false);
+    pump(50);
+    let dialog = xpad_offer(&c.app);
+    assert!(c.app.windows().is_empty(), "no blank note behind the offer");
+    dialog.emit_by_name::<()>("response", &[&"import"]);
+    pump(50);
+    assert_eq!(c.app.notes().len(), 2);
+    assert_eq!(visible_texts(&c.app), ["Buy milk"]);
+    let manager = c.app.manager().unwrap();
+    assert_eq!(manager.row_ids().len(), 2, "the manager lists the imported notes");
+    manager.window.destroy();
+}
+
+fn declining_xpad_import_starts_fresh_and_never_asks_again(c: &Ctx) {
+    let xpad = xpad_dir_with_notes();
+    c.app.set_xpad_dir(xpad.path());
+    c.app.run_command("show", false);
+    pump(50);
+    xpad_offer(&c.app).emit_by_name::<()>("response", &[&"skip"]);
+    pump(50);
+    assert_eq!(visible_texts(&c.app), [""], "a blank note to start with");
+    c.app.manager().unwrap().window.destroy();
+    pump(20);
+
+    let id = c.app.windows()[0].id();
+    c.app.delete_note(&id);
+    c.app.run_command("show", false);
+    pump(50);
+    assert!(c.app.manager().is_none(), "not offered a second time");
+    assert_eq!(visible_texts(&c.app), [""]);
 }
 
 /// A named UI test.
@@ -385,6 +474,12 @@ fn main() {
         ("read_view_checkbox_click", read_view_checkbox_click),
         ("read_view_text_click_enters_edit_at_position", read_view_text_click_enters_edit_at_position),
         ("manager_lists_and_filters", manager_lists_and_filters),
+        ("import_xpad_shows_imported_notes", import_xpad_shows_imported_notes),
+        ("first_start_offers_xpad_import", first_start_offers_xpad_import),
+        (
+            "declining_xpad_import_starts_fresh_and_never_asks_again",
+            declining_xpad_import_starts_fresh_and_never_asks_again,
+        ),
     ];
     let mut failed = Vec::new();
     for (name, test) in tests {

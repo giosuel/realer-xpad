@@ -34,6 +34,14 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.2" date="2026-10-12">
+      <description>
+        <ul>
+          <li>Import your notes from xpad: offered on first start, and any time from the notes manager or with "realer-xpad import-xpad"</li>
+          <li>Reopening the notes manager after closing it now works reliably</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-10-11">
       <description>
         <ul>

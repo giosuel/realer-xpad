@@ -9,13 +9,17 @@
 //! `hyprland.conf` setups only accept the classic syntax (`pin address:0x...`).
 //! We send Lua first and switch to the classic syntax for good the first time
 //! Hyprland answers "Invalid dispatcher".
+//!
+//! Requests run on the GTK main thread, so they're short and bounded: each
+//! step times out after `TIMEOUT`, and after a timeout we leave Hyprland alone
+//! for `BACKOFF` so a stuck compositor can't keep freezing the notes.
 
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -70,16 +74,21 @@ impl Command {
 const SYNTAX_LUA: u8 = 1;
 const SYNTAX_CLASSIC: u8 = 2;
 
+const TIMEOUT: Duration = Duration::from_millis(500);
+const BACKOFF: Duration = Duration::from_secs(10);
+
 #[derive(Clone, Debug)]
 pub struct Hyprland {
     pub socket_path: PathBuf,
     /// Which dispatcher syntax works, shared by all clones.
     syntax: Arc<AtomicU8>,
+    /// No requests until then, after one timed out. Shared by all clones.
+    quiet_until: Arc<Mutex<Option<Instant>>>,
 }
 
 impl Hyprland {
     pub fn new(socket_path: impl Into<PathBuf>) -> Self {
-        Hyprland { socket_path: socket_path.into(), syntax: Arc::default() }
+        Hyprland { socket_path: socket_path.into(), syntax: Arc::default(), quiet_until: Arc::default() }
     }
 
     pub fn detect() -> Option<Self> {
@@ -89,10 +98,22 @@ impl Hyprland {
         socket_path().map(Self::new)
     }
 
-    pub fn request(&self, message: &str) -> std::io::Result<String> {
-        let mut sock = UnixStream::connect(&self.socket_path)?;
-        sock.set_read_timeout(Some(Duration::from_secs(1)))?;
-        sock.set_write_timeout(Some(Duration::from_secs(1)))?;
+    pub fn request(&self, message: &str) -> io::Result<String> {
+        let mut quiet = self.quiet_until.lock().unwrap_or_else(|e| e.into_inner());
+        if quiet.is_some_and(|until| Instant::now() < until) {
+            return Err(io::Error::new(io::ErrorKind::TimedOut, "Hyprland was unresponsive"));
+        }
+        let result = self.exchange(message);
+        let timed_out =
+            matches!(&result, Err(e) if matches!(e.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock));
+        *quiet = timed_out.then(|| Instant::now() + BACKOFF);
+        result
+    }
+
+    fn exchange(&self, message: &str) -> io::Result<String> {
+        let mut sock = connect(&self.socket_path, TIMEOUT)?;
+        sock.set_read_timeout(Some(TIMEOUT))?;
+        sock.set_write_timeout(Some(TIMEOUT))?;
         sock.write_all(message.as_bytes())?;
         let mut reply = String::new();
         sock.read_to_string(&mut reply)?;
@@ -104,8 +125,13 @@ impl Hyprland {
     }
 
     pub fn find(&self, initial_title: &str, pid: Option<u32>) -> Option<Value> {
-        self.clients()
-            .into_iter()
+        Self::find_in(&self.clients(), initial_title, pid).cloned()
+    }
+
+    /// Like `find`, in a client list fetched once for several windows.
+    pub fn find_in<'a>(clients: &'a [Value], initial_title: &str, pid: Option<u32>) -> Option<&'a Value> {
+        clients
+            .iter()
             .find(|c| c["initialTitle"] == initial_title && pid.is_none_or(|pid| c["pid"].as_u64() == Some(pid.into())))
     }
 
@@ -157,6 +183,15 @@ impl Hyprland {
         let n = |v: &Value| v.as_i64().unwrap_or(0) as i32;
         (n(&client["at"][0]), n(&client["at"][1]), n(&client["size"][0]), n(&client["size"][1]))
     }
+}
+
+/// `UnixStream::connect` can block indefinitely when Hyprland isn't accepting
+/// connections, so connect on a helper thread and stop waiting after `timeout`.
+fn connect(path: &Path, timeout: Duration) -> io::Result<UnixStream> {
+    let (tx, rx) = mpsc::channel();
+    let path = path.to_path_buf();
+    std::thread::spawn(move || tx.send(UnixStream::connect(path)));
+    rx.recv_timeout(timeout).map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "connecting to Hyprland"))?
 }
 
 #[cfg(test)]
@@ -223,6 +258,28 @@ mod tests {
         fn sent(&self) -> Vec<String> {
             self.requests.lock().unwrap().clone()
         }
+    }
+
+    #[test]
+    fn a_stuck_hyprland_costs_one_timeout_then_is_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".socket.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        let held = Arc::new(Mutex::new(Vec::new()));
+        let keep = held.clone();
+        std::thread::spawn(move || {
+            for conn in listener.incoming().flatten() {
+                keep.lock().unwrap().push(conn); // accept, never answer
+            }
+        });
+        let hypr = Hyprland::new(path);
+        let start = Instant::now();
+        assert!(hypr.clients().is_empty());
+        assert!(start.elapsed() < TIMEOUT * 3, "bounded by the timeout: {:?}", start.elapsed());
+        let start = Instant::now();
+        assert!(!hypr.clone().place("0xabc", None, 300, 250));
+        assert!(start.elapsed() < Duration::from_millis(50), "no second wait during the backoff");
+        assert_eq!(held.lock().unwrap().len(), 1, "no second connection");
     }
 
     #[test]

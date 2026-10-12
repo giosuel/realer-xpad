@@ -10,20 +10,24 @@ title: Shortcuts & CLI
 |---|---|
 | ++ctrl+n++ | New note |
 | ++ctrl+e++ | Switch between edit and read view |
-| ++ctrl+d++ | Toggle draw mode |
+| ++ctrl+d++ | Switch between typing and the last drawing tool |
 | ++ctrl+b++ / ++ctrl+i++ | Bold / italic (wraps the selection) |
 | ++tab++ / ++shift+tab++ | Indent / outdent list item |
 | ++enter++ | Continue list; on an empty item, end it |
 | ++ctrl+w++ | Close (hide) the note |
-| ++esc++ | Read view, or leave draw mode |
+| ++esc++ | Read view, or back to Text from a drawing tool |
 | ++ctrl++ + click | Open a link while editing |
 | ++ctrl+q++ | Save everything and quit |
 
-## In draw mode
+## While drawing
+
+These work while a drawing tool is selected. With Text selected the letters
+just type.
 
 | Keys | Action |
 |---|---|
-| ++p++ / ++h++ / ++e++ | Pen / highlighter / eraser |
+| ++t++ | Text |
+| ++p++ / ++h++ / ++s++ / ++e++ | Pen / highlighter / shapes / eraser |
 | ++ctrl+z++ | Undo |
 | ++ctrl+shift+z++ or ++ctrl+y++ | Redo |
 

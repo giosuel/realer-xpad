@@ -6,7 +6,9 @@ use std::rc::{Rc, Weak};
 use gtk::prelude::*;
 use gtk::{cairo, gdk};
 
-use crate::drawing::{Drawing, HIGHLIGHTER_ALPHA, INK_COLORS, Point, Stroke, WIDTHS, smooth_points};
+use crate::drawing::{
+    Drawing, HIGHLIGHTER_ALPHA, INK_COLORS, Point, Stroke, WIDTHS, arrow_head, is_shape, smooth_points,
+};
 
 pub const ERASER_RADIUS: f64 = 8.0;
 
@@ -47,6 +49,38 @@ fn pressure_scale(p: f64) -> f64 {
     0.35 + 0.9 * p.clamp(0.0, 1.0)
 }
 
+/// A line, arrow, rectangle or ellipse between the stroke's first and last point.
+fn draw_shape(cr: &cairo::Context, stroke: &Stroke) {
+    let (a, b) = (stroke.points[0], stroke.points[stroke.points.len() - 1]);
+    let ((x0, y0), (x1, y1)) = ((a.0, a.1), (b.0, b.1));
+    match stroke.tool.as_str() {
+        "rect" => cr.rectangle(x0.min(x1), y0.min(y1), (x1 - x0).abs(), (y1 - y0).abs()),
+        "ellipse" => {
+            let (rx, ry) = ((x1 - x0).abs() / 2.0, (y1 - y0).abs() / 2.0);
+            if rx > 0.0 && ry > 0.0 {
+                // Scale a unit circle; restoring the matrix before stroking keeps the line even.
+                cr.save().ok();
+                cr.translate((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+                cr.scale(rx, ry);
+                cr.arc(0.0, 0.0, 1.0, 0.0, std::f64::consts::TAU);
+                cr.restore().ok();
+            }
+        }
+        _ => {
+            cr.move_to(x0, y0);
+            cr.line_to(x1, y1);
+            if stroke.tool == "arrow" {
+                let (l, r) = arrow_head((x0, y0), (x1, y1), stroke.width);
+                cr.move_to(l.0, l.1);
+                cr.line_to(x1, y1);
+                cr.line_to(r.0, r.1);
+            }
+        }
+    }
+    cr.set_line_width(stroke.width);
+    let _ = cr.stroke();
+}
+
 pub fn draw_stroke(cr: &cairo::Context, stroke: &Stroke, ink: &gdk::RGBA) {
     let pts = &stroke.points;
     if pts.is_empty() {
@@ -54,6 +88,12 @@ pub fn draw_stroke(cr: &cairo::Context, stroke: &Stroke, ink: &gdk::RGBA) {
     }
     cr.set_line_cap(cairo::LineCap::Round);
     cr.set_line_join(cairo::LineJoin::Round);
+    if stroke.is_shape() {
+        let (r, g, b, a) = color(&stroke.color, ink, 1.0);
+        cr.set_source_rgba(r, g, b, a);
+        draw_shape(cr, stroke);
+        return;
+    }
     let stroke_path = |width: f64, points: &[Point]| {
         path(cr, points);
         cr.set_line_width(width);
@@ -211,7 +251,10 @@ impl Canvas {
             self.erase(x, y);
             return;
         }
-        let stroke = Stroke::new(&self.tool.borrow(), &self.color.borrow(), self.width.get(), vec![(x, y, pressure)]);
+        let tool = self.tool.borrow().clone();
+        // A shape starts with both of its points where the drag starts.
+        let points = if is_shape(&tool) { vec![(x, y, 1.0), (x, y, 1.0)] } else { vec![(x, y, pressure)] };
+        let stroke = Stroke::new(&tool, &self.color.borrow(), self.width.get(), points);
         *self.current.borrow_mut() = Some(stroke);
         self.area.queue_draw();
     }
@@ -225,6 +268,11 @@ impl Canvas {
         }
         let mut current = self.current.borrow_mut();
         let Some(stroke) = current.as_mut() else { return };
+        if stroke.is_shape() {
+            stroke.points[1] = (x, y, 1.0);
+            self.area.queue_draw();
+            return;
+        }
         let last = stroke.points[stroke.points.len() - 1];
         if (last.0 - x).abs() + (last.1 - y).abs() < 1.5 {
             return; // ignore jitter
@@ -241,7 +289,15 @@ impl Canvas {
             return;
         }
         let Some(mut stroke) = self.current.borrow_mut().take() else { return };
-        stroke.points = smooth_points(&stroke.points);
+        if stroke.is_shape() {
+            let (a, b) = (stroke.points[0], stroke.points[1]);
+            if (a.0 - b.0).hypot(a.1 - b.1) < 3.0 {
+                self.area.queue_draw(); // a click, not a drag: no shape
+                return;
+            }
+        } else {
+            stroke.points = smooth_points(&stroke.points);
+        }
         self.drawing.borrow_mut().add(stroke);
         self.changed();
     }

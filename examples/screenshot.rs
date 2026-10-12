@@ -54,8 +54,8 @@ fn wave(x0: f64, y0: f64, len: f64, amp: f64, pressure: bool) -> Vec<Point> {
 fn demo_notes() -> Vec<Note> {
     let sketch = vec![
         Stroke::new("pen", "ink", 2.0, rect(24.0, 70.0, 120.0, 80.0)),
-        Stroke::new("pen", "ink", 2.0, rect(160.0, 70.0, 100.0, 36.0)),
-        Stroke::new("pen", "ink", 2.0, rect(160.0, 116.0, 100.0, 34.0)),
+        Stroke::new("rect", "ink", 2.0, vec![(160.0, 70.0, 1.0), (260.0, 106.0, 1.0)]),
+        Stroke::new("ellipse", "ink", 2.0, vec![(160.0, 116.0, 1.0), (260.0, 150.0, 1.0)]),
         Stroke::new("highlighter", "#f76b15", 4.0, wave(30.0, 185.0, 220.0, 4.0, false)),
         Stroke::new("pen", "#3e63dd", 4.0, wave(40.0, 230.0, 200.0, 14.0, true)),
         Stroke::new("pen", "#e5484d", 4.0, densify(&[(70.0, 110.0), (80.0, 122.0), (104.0, 92.0)])),

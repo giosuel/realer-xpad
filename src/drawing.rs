@@ -4,7 +4,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
+/// Freehand tools. Shapes are tools too (see [`SHAPES`]); the eraser removes strokes.
 pub const TOOLS: [&str; 3] = ["pen", "highlighter", "eraser"];
+/// Shapes are strokes with two points, where they start and end.
+pub const SHAPES: [&str; 4] = ["line", "arrow", "rect", "ellipse"];
 /// `"ink"` follows the note's text colour, so it stays readable in light and dark mode.
 pub const INK_COLORS: [&str; 6] = ["ink", "#e5484d", "#3e63dd", "#30a46c", "#f76b15", "#8e4ec6"];
 pub const WIDTHS: [f64; 3] = [2.0, 4.0, 8.0];
@@ -90,20 +93,52 @@ impl Stroke {
         Stroke { id: NEXT_ID.fetch_add(1, Ordering::Relaxed), tool: tool.into(), color: color.into(), width, points }
     }
 
+    pub fn is_shape(&self) -> bool {
+        is_shape(&self.tool)
+    }
+
     pub fn effective_width(&self) -> f64 {
         self.width * if self.tool == "highlighter" { HIGHLIGHTER_SCALE } else { 1.0 }
     }
 
+    /// The lines a stroke is drawn with, as polylines: the points of a freehand
+    /// stroke, or a shape's outline (an ellipse as a fine polygon).
+    pub fn outline(&self) -> Vec<Vec<(f64, f64)>> {
+        let pts = &self.points;
+        let (Some(a), Some(b)) = (pts.first(), pts.last()) else { return Vec::new() };
+        let ((x0, y0), (x1, y1)) = ((a.0, a.1), (b.0, b.1));
+        match self.tool.as_str() {
+            "line" => vec![vec![(x0, y0), (x1, y1)]],
+            "arrow" => {
+                let (l, r) = arrow_head((x0, y0), (x1, y1), self.width);
+                vec![vec![(x0, y0), (x1, y1)], vec![l, (x1, y1), r]]
+            }
+            "rect" => vec![vec![(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)]],
+            "ellipse" => {
+                let (cx, cy, rx, ry) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0, (x1 - x0).abs() / 2.0, (y1 - y0).abs() / 2.0);
+                let n = 48;
+                vec![
+                    (0..=n)
+                        .map(|i| {
+                            let t = i as f64 / n as f64 * std::f64::consts::TAU;
+                            (cx + rx * t.cos(), cy + ry * t.sin())
+                        })
+                        .collect(),
+                ]
+            }
+            _ => vec![pts.iter().map(|p| (p.0, p.1)).collect()],
+        }
+    }
+
     pub fn hit(&self, x: f64, y: f64, radius: f64) -> bool {
         let reach = radius + self.effective_width() / 2.0;
-        let pts = &self.points;
-        match pts.len() {
-            0 => false,
-            1 => (pts[0].0 - x).hypot(pts[0].1 - y) <= reach,
+        self.outline().iter().any(|line| match line.as_slice() {
+            [] => false,
+            [p] => (p.0 - x).hypot(p.1 - y) <= reach,
             _ => {
                 // Cheap bounding-box rejection before the per-segment distance check.
                 let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
-                for p in pts {
+                for p in line {
                     x0 = x0.min(p.0);
                     y0 = y0.min(p.1);
                     x1 = x1.max(p.0);
@@ -112,13 +147,26 @@ impl Stroke {
                 if x < x0 - reach || x > x1 + reach || y < y0 - reach || y > y1 + reach {
                     return false;
                 }
-                pts.windows(2).any(|w| seg_dist(x, y, w[0], w[1]) <= reach)
+                line.windows(2).any(|w| seg_dist(x, y, w[0], w[1]) <= reach)
             }
-        }
+        })
     }
 }
 
-fn seg_dist(px: f64, py: f64, a: Point, b: Point) -> f64 {
+pub fn is_shape(tool: &str) -> bool {
+    SHAPES.contains(&tool)
+}
+
+/// The two ends of an arrow head at `tip`, for a shaft coming from `from`.
+pub fn arrow_head(from: (f64, f64), tip: (f64, f64), width: f64) -> ((f64, f64), (f64, f64)) {
+    let len = (width * 3.5).max(10.0);
+    let angle = (tip.1 - from.1).atan2(tip.0 - from.0);
+    let spread = 28f64.to_radians();
+    let end = |a: f64| (tip.0 - len * a.cos(), tip.1 - len * a.sin());
+    (end(angle - spread), end(angle + spread))
+}
+
+fn seg_dist(px: f64, py: f64, a: (f64, f64), b: (f64, f64)) -> f64 {
     let (dx, dy) = (b.0 - a.0, b.1 - a.1);
     let len2 = dx * dx + dy * dy;
     let t = if len2 == 0.0 { 0.0 } else { (((px - a.0) * dx + (py - a.1) * dy) / len2).clamp(0.0, 1.0) };
@@ -373,6 +421,45 @@ mod tests {
         let s: Stroke = serde_json::from_str(r#"{"points": [[1, 2], [3, 4]]}"#).unwrap();
         assert_eq!(s.points, [(1.0, 2.0, 1.0), (3.0, 4.0, 1.0)]);
         assert_eq!((s.tool.as_str(), s.color.as_str(), s.width), ("pen", "ink", 4.0));
+    }
+
+    fn shape(tool: &str, x0: f64, y0: f64, x1: f64, y1: f64) -> Stroke {
+        Stroke::new(tool, "ink", 2.0, vec![(x0, y0, 1.0), (x1, y1, 1.0)])
+    }
+
+    #[test]
+    fn shapes_are_hit_on_their_outline() {
+        let rect = shape("rect", 0.0, 0.0, 100.0, 50.0);
+        assert!(rect.hit(100.0, 25.0, 4.0), "right edge");
+        assert!(rect.hit(50.0, 50.0, 4.0), "bottom edge");
+        assert!(!rect.hit(50.0, 25.0, 4.0), "not the inside");
+        assert!(!rect.hit(50.0, 25.5, 4.0), "nor the diagonal between its two points");
+
+        let ellipse = shape("ellipse", 0.0, 0.0, 100.0, 50.0);
+        assert!(ellipse.hit(50.0, 0.0, 4.0) && ellipse.hit(100.0, 25.0, 4.0));
+        assert!(!ellipse.hit(50.0, 25.0, 4.0), "not the centre");
+        assert!(!ellipse.hit(2.0, 2.0, 2.0), "nor the bounding box corner");
+
+        let arrow = shape("arrow", 0.0, 0.0, 100.0, 0.0);
+        assert!(arrow.hit(50.0, 0.0, 2.0));
+        let (l, r) = arrow_head((0.0, 0.0), (100.0, 0.0), 2.0);
+        assert!(l.0 < 100.0 && r.0 < 100.0, "the head points back from the tip");
+        assert!((l.1 < 0.0) != (r.1 < 0.0), "one end on each side of the shaft");
+        assert!(arrow.hit(l.0, l.1, 1.0), "and is part of the arrow");
+
+        // Drawn from bottom right to top left, it's the same rectangle.
+        assert!(shape("rect", 100.0, 50.0, 0.0, 0.0).hit(100.0, 25.0, 4.0));
+    }
+
+    #[test]
+    fn shapes_erase_and_save_like_strokes() {
+        let mut d = Drawing::new(vec![shape("ellipse", 0.0, 0.0, 40.0, 40.0)]);
+        assert!(!d.erase_at(20.0, 20.0, 5.0), "erasing inside an ellipse leaves it");
+        assert!(d.erase_at(40.0, 20.0, 5.0));
+        assert!(d.strokes.is_empty());
+        let json = serde_json::to_string(&shape("arrow", 1.0, 2.0, 3.0, 4.0)).unwrap();
+        assert_eq!(json, r#"{"tool":"arrow","color":"ink","width":2.0,"points":[[1.0,2.0,1.0],[3.0,4.0,1.0]]}"#);
+        assert!(serde_json::from_str::<Stroke>(&json).unwrap().is_shape());
     }
 
     #[test]

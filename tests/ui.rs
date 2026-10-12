@@ -153,12 +153,14 @@ fn color_change(c: &Ctx) {
     assert!(win.window.has_css_class("mint") && !win.window.has_css_class("yellow"));
 }
 
-fn draw_mode_and_strokes(c: &Ctx) {
+fn tools_and_strokes(c: &Ctx) {
     let win = c.new_window();
-    assert!(!win.canvas.area.can_target());
-    win.mode_btn.set_active(true);
+    assert_eq!(win.tool(), "text", "typing is the default");
+    assert!(!win.canvas.area.can_target() && win.tool_bar.is_visible());
+    assert!(!win.ink_btn.is_sensitive(), "ink only matters for drawing");
+    win.select_tool("pen");
     assert_eq!(win.mode(), "draw");
-    assert!(win.canvas.area.can_target() && win.draw_bar.reveals_child());
+    assert!(win.canvas.area.can_target() && win.tool_bar.is_visible() && win.ink_btn.is_sensitive());
 
     win.canvas.begin(0.0, 0.0, 1.0, false);
     win.canvas.update(20.0, 20.0, 0.5);
@@ -169,23 +171,91 @@ fn draw_mode_and_strokes(c: &Ctx) {
     win.canvas.undo();
     assert!(win.note.borrow().strokes.is_empty() && win.redo_btn.is_sensitive());
 
-    win.mode_btn.set_active(false);
+    win.select_tool("text");
     assert_eq!(win.mode(), "text");
-    assert!(!win.canvas.area.can_target());
+    assert!(!win.canvas.area.can_target() && win.tool_bar.is_visible());
+}
+
+fn shapes_are_drawn_by_dragging(c: &Ctx) {
+    let win = c.new_window();
+    win.select_tool("shape");
+    assert_eq!(win.tool(), "shape");
+    win.canvas.begin(10.0, 10.0, 1.0, false);
+    win.canvas.update(30.0, 20.0, 1.0);
+    win.canvas.update(80.0, 50.0, 1.0); // only the end point moves
+    win.canvas.end();
+    let stroke = win.note.borrow().strokes[0].clone();
+    assert_eq!((stroke.tool.as_str(), stroke.points.len()), ("rect", 2), "rectangle by default");
+    assert_eq!((stroke.points[1].0, stroke.points[1].1), (80.0, 50.0));
+
+    win.shape_buttons.iter().find(|(s, _)| *s == "arrow").unwrap().1.set_active(true);
+    assert_eq!(win.tool(), "shape");
+    win.canvas.begin(10.0, 80.0, 1.0, false);
+    win.canvas.update(90.0, 80.0, 1.0);
+    win.canvas.end();
+    assert_eq!(win.note.borrow().strokes[1].tool, "arrow");
+
+    win.canvas.begin(50.0, 50.0, 1.0, false); // a click, not a drag
+    win.canvas.end();
+    assert_eq!(win.note.borrow().strokes.len(), 2, "no tiny shapes from clicks");
+
+    // Choosing a shape while typing switches to the shape tool.
+    win.select_tool("text");
+    win.select_tool("ellipse");
+    assert_eq!(win.tool(), "shape");
+}
+
+fn undo_follows_the_tool(c: &Ctx) {
+    let win = c.new_window();
+    win.editor.buffer.set_text("first");
+    win.editor.buffer.insert(&mut win.editor.buffer.end_iter(), " second");
+    pump(20);
+    assert!(win.undo_btn.is_sensitive(), "text tool: undo edits the text");
+    win.undo_btn.emit_clicked();
+    assert_eq!(win.editor.text(), "first");
+    win.select_tool("pen");
+    assert!(!win.undo_btn.is_sensitive(), "pen: nothing drawn yet");
+    win.canvas.begin(0.0, 0.0, 1.0, false);
+    win.canvas.update(20.0, 20.0, 1.0);
+    win.canvas.end();
+    win.undo_btn.emit_clicked();
+    assert!(win.note.borrow().strokes.is_empty());
+    assert_eq!(win.editor.text(), "first", "and leaves the text alone");
+}
+
+fn tool_keys_only_while_drawing(c: &Ctx) {
+    let win = c.new_window();
+    use gtk::glib::translate::IntoGlib;
+    let key = |k: gtk::gdk::Key, mods: gtk::gdk::ModifierType| {
+        let keys = win.window.observe_controllers();
+        let controller =
+            (0..keys.n_items()).filter_map(|i| keys.item(i).and_downcast::<gtk::EventControllerKey>()).next().unwrap();
+        controller.emit_by_name::<bool>("key-pressed", &[&k.into_glib(), &0u32, &mods])
+    };
+    assert!(!key(gtk::gdk::Key::p, gtk::gdk::ModifierType::empty()), "in the text tool, P types");
+    assert_eq!(win.tool(), "text");
+    assert!(key(gtk::gdk::Key::d, gtk::gdk::ModifierType::CONTROL_MASK));
+    assert_eq!(win.tool(), "pen", "Ctrl+D draws");
+    assert!(key(gtk::gdk::Key::s, gtk::gdk::ModifierType::empty()));
+    assert_eq!(win.tool(), "shape");
+    assert!(key(gtk::gdk::Key::Escape, gtk::gdk::ModifierType::empty()));
+    assert_eq!(win.tool(), "text");
+    assert!(key(gtk::gdk::Key::d, gtk::gdk::ModifierType::CONTROL_MASK));
+    assert_eq!(win.tool(), "shape", "Ctrl+D returns to the last drawing tool");
 }
 
 fn note_saved_in_draw_mode_reopens_in_draw_mode(c: &Ctx) {
     let note = Note { mode: "draw".into(), ..Default::default() };
     let id = note.id.clone();
     let win = NoteWindow::new(&c.app, Rc::new(RefCell::new(note)));
-    assert!(win.mode_btn.is_active() && win.draw_bar.reveals_child() && win.canvas.area.can_target());
+    assert!(win.tool() == "pen" && win.canvas.area.can_target());
     assert_eq!(win.id(), id);
     win.window.destroy();
 }
 
 fn canvas_pointer_erasing(c: &Ctx) {
     let win = c.new_window();
-    win.mode_btn.set_active(true);
+    win.select_tool("pen");
     let canvas = &win.canvas;
     canvas.begin(10.0, 10.0, 1.0, false);
     for i in 1..=10 {
@@ -260,7 +330,10 @@ fn bundled_icons_are_available(_: &Ctx) {
         "rx-pen-symbolic",
         "rx-highlighter-symbolic",
         "rx-eraser-symbolic",
-        "rx-draw-symbolic",
+        "rx-line-symbolic",
+        "rx-arrow-symbolic",
+        "rx-rect-symbolic",
+        "rx-ellipse-symbolic",
         "rx-text-symbolic",
         "rx-pin-symbolic",
         realer_xpad::APP_ID,
@@ -606,7 +679,10 @@ fn main() {
         ("new_note_is_saved_and_shown", new_note_is_saved_and_shown),
         ("typing_saves_text", typing_saves_text),
         ("color_change", color_change),
-        ("draw_mode_and_strokes", draw_mode_and_strokes),
+        ("tools_and_strokes", tools_and_strokes),
+        ("shapes_are_drawn_by_dragging", shapes_are_drawn_by_dragging),
+        ("undo_follows_the_tool", undo_follows_the_tool),
+        ("tool_keys_only_while_drawing", tool_keys_only_while_drawing),
         ("note_saved_in_draw_mode_reopens_in_draw_mode", note_saved_in_draw_mode_reopens_in_draw_mode),
         ("canvas_pointer_erasing", canvas_pointer_erasing),
         ("canvas_renders", canvas_renders),

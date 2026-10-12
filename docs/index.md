@@ -50,11 +50,11 @@ xpad got one thing right: notes that just *sit there* on your desktop, ready for
 
     `- [ ]` becomes a real checkbox. <kbd>Enter</kbd> continues a list and <kbd>Tab</kbd> nests it.
 
--   :material-draw:{ .lg } **A pen, a highlighter, an eraser**
+-   :material-draw:{ .lg } **Pen, highlighter, shapes, eraser**
 
     ---
 
-    Sketch over your text with stylus pressure, six inks and undo. The default ink adapts to light and dark mode.
+    Sketch over your text with stylus pressure, lines, arrows, boxes and circles, six inks and undo. The tools are always in reach. The default ink adapts to light and dark mode.
 
 -   :material-palette-swatch-variant:{ .lg } **Seven moods**
 

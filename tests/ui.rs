@@ -610,6 +610,7 @@ fn tray_icon_registers_and_works(c: &Ctx) {
     assert_eq!(get("Title").str(), Some("Realer Xpad"));
     let pixmaps = get("IconPixmap").get::<Vec<(i32, i32, Vec<u8>)>>().unwrap();
     assert!(!pixmaps.is_empty(), "the logo, as pixels");
+    assert_eq!(get("IconName").str(), Some(""), "pixels only, so no tray can fail to look the name up");
     for (w, h, data) in &pixmaps {
         assert_eq!(data.len(), (*w * *h * 4) as usize);
         assert!(data.chunks(4).any(|p| p[0] > 0), "not fully transparent");

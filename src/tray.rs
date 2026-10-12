@@ -6,7 +6,6 @@
 //! unique bus name, so the Flatpak only needs to talk to the watcher.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use gtk::gio::prelude::*;
 use gtk::glib::{self, Variant};
@@ -148,11 +147,10 @@ pub fn start(connection: &gio::DBusConnection, on_action: impl Fn(Action) + 'sta
     let menu = node.lookup_interface("com.canonical.dbusmenu").expect("menu interface");
     let on_action = std::rc::Rc::new(on_action);
 
-    let icon_name = if icon_installed() { APP_ID.to_string() } else { String::new() };
     let pixmaps = icon_pixmaps();
     let item_registration = connection
         .register_object(ITEM_PATH, &item)
-        .property(move |_, _, _, _, name| item_property(name, &icon_name, &pixmaps))
+        .property(move |_, _, _, _, name| item_property(name, &pixmaps))
         .method_call({
             let on_action = on_action.clone();
             move |_, _, _, _, method, _, invocation| {
@@ -219,7 +217,10 @@ pub fn action_for(id: i32) -> Option<Action> {
 
 type Pixmap = (i32, i32, Vec<u8>);
 
-fn item_property(name: &str, icon_name: &str, pixmaps: &[Pixmap]) -> Variant {
+/// The icon goes out as pixels only. Trays prefer `IconName` when it's set, and
+/// some (Qt Quick shells) draw a "missing" checkerboard when their own lookup
+/// of an app icon fails, while every tray can show pixels.
+fn item_property(name: &str, pixmaps: &[Pixmap]) -> Variant {
     let none: Vec<Pixmap> = Vec::new();
     match name {
         "Category" => "ApplicationStatus".to_variant(),
@@ -227,13 +228,12 @@ fn item_property(name: &str, icon_name: &str, pixmaps: &[Pixmap]) -> Variant {
         "Title" => APP_NAME.to_variant(),
         "Status" => "Active".to_variant(),
         "WindowId" => 0i32.to_variant(),
-        "IconName" => icon_name.to_variant(),
         "IconPixmap" => pixmaps.to_vec().to_variant(),
         "ItemIsMenu" => false.to_variant(),
         "Menu" => glib::variant::ObjectPath::try_from(MENU_PATH).expect("object path").to_variant(),
         "ToolTip" => ("", none, APP_NAME, "Click to show or hide your notes").to_variant(),
         "OverlayIconPixmap" | "AttentionIconPixmap" => none.to_variant(),
-        _ => "".to_variant(), // IconThemePath, OverlayIconName, AttentionIconName, AttentionMovieName
+        _ => "".to_variant(), // IconName, IconThemePath, OverlayIconName, AttentionIconName, AttentionMovieName
     }
 }
 
@@ -311,19 +311,6 @@ pub fn menu_call(method: &str, params: &Variant, clicked: &dyn Fn(i32)) -> Optio
         "AboutToShowGroup" => Some((Vec::<i32>::new(), Vec::<i32>::new()).to_variant()),
         _ => None,
     }
-}
-
-/// Whether the app icon is in an icon theme the tray can look it up in by name.
-/// Otherwise (e.g. the AppImage) the tray gets pixels only.
-fn icon_installed() -> bool {
-    let data_home = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")));
-    let data_dirs = std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
-    data_home
-        .into_iter()
-        .chain(data_dirs.split(':').filter(|d| !d.is_empty()).map(PathBuf::from))
-        .any(|dir| dir.join(format!("icons/hicolor/scalable/apps/{APP_ID}.svg")).exists())
 }
 
 /// The logo at a few sizes, as ARGB32 in network byte order.

@@ -48,7 +48,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   meta = {
     description = "Sticky notes with Markdown and drawing, native on Wayland and Hyprland";
-    homepage = "https://giosuel.github.io/realer-xpad/";
+    homepage = "https://realer-xpad.giosuel.ch/";
     changelog = "https://github.com/giosuel/realer-xpad/releases/tag/v${finalAttrs.version}";
     license = lib.licenses.agpl3Only;
     maintainers = [ ];

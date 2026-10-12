@@ -173,6 +173,22 @@ jobs:
           name: flatpak
           path: Realer_Xpad-*.flatpak
 
+  nix:
+    name: Nix
+    needs: [lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - name: Format
+        run: nix run nixpkgs#nixfmt -- --check flake.nix packaging/nix/package.nix
+      - name: Flake check
+        run: nix flake check -L
+      - name: Build
+        run: nix build -L .#realer-xpad
+      - name: Smoke test
+        run: ./result/bin/realer-xpad --version
+
   release:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')

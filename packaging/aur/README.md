@@ -33,12 +33,17 @@ for pkg in realer-xpad realer-xpad-bin; do
 done
 ```
 
-## Update after a release
+## Updates are automatic
 
-```sh
-packaging/aur/bump.sh 0.1.2   # new pkgver, pkgrel=1, fresh checksums
-packaging/aur/test.sh         # build, lint, regenerate .SRCINFO
-```
+When a stable `v*` tag is released, the `AUR` jobs in `.github/workflows/ci.yml`:
 
-Commit the result here, then copy `PKGBUILD` and `.SRCINFO` to each AUR repository
-and push, as above.
+1. set `pkgver` to the tag and `pkgrel=1`,
+2. refresh the checksums and build each package in Arch,
+3. push `PKGBUILD` and a new `.SRCINFO` to the AUR.
+
+They push with the `AUR_SSH_PRIVATE_KEY` repository secret, a key registered on the
+AUR account. Pre-releases (`v1.0.0-rc1`) are skipped.
+
+Change anything else (dependencies, install steps) here first, check it with
+`test.sh`, and the next release carries it over. To push an update by hand, run
+`bump.sh <version>` and `test.sh`, then copy `PKGBUILD` and `.SRCINFO` over as above.

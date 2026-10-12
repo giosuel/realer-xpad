@@ -178,3 +178,33 @@ jobs:
             --title "Realer Xpad ${GITHUB_REF_NAME#v}" \
             --generate-notes \
             $([[ "$GITHUB_REF_NAME" == *-* ]] && echo --prerelease)
+
+  aur:
+    name: AUR (${{ matrix.pkg }})
+    # Stable releases only, after the GitHub release (and its tarball) exists.
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg: [realer-xpad, realer-xpad-bin]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set pkgver
+        run: |
+          sed -i -e "s/^pkgver=.*/pkgver=${GITHUB_REF_NAME#v}/" -e "s/^pkgrel=.*/pkgrel=1/" \
+            "packaging/aur/${{ matrix.pkg }}/PKGBUILD"
+      # Builds the package (checksums refreshed, dependencies installed), then
+      # pushes PKGBUILD and a fresh .SRCINFO to the AUR.
+      - uses: KSXGitHub/github-actions-deploy-aur@084b0d9b15415bf9cdb65d44dad1efe37a354050 # v4.2.0
+        with:
+          pkgname: ${{ matrix.pkg }}
+          pkgbuild: packaging/aur/${{ matrix.pkg }}/PKGBUILD
+          updpkgsums: true
+          test: true
+          test_flags: --clean --cleanbuild --syncdeps --noconfirm
+          commit_username: giosuel
+          commit_email: me@giosuel.ch
+          commit_message: Update to ${{ github.ref_name }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}

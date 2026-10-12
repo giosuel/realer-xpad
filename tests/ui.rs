@@ -10,7 +10,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use adw::prelude::*;
-use gtk::{glib, graphene};
+use gtk::{gio, glib, graphene};
 use realer_xpad::app::App;
 use realer_xpad::drawing::Stroke;
 use realer_xpad::editor::MarkdownEditor;
@@ -281,10 +281,10 @@ fn hide_and_show(c: &Ctx) {
 fn toggle_command_hides_and_restores(c: &Ctx) {
     c.app.new_note();
     c.app.new_note();
-    c.app.run_command("toggle", false);
+    c.app.run_command("toggle");
     assert!(!c.app.any_visible());
     assert!(c.app.notes().iter().all(|n| n.borrow().visible)); // still "open", just hidden
-    c.app.run_command("toggle", false);
+    c.app.run_command("toggle");
     assert!(c.app.windows().iter().all(|w| w.window.is_visible()));
 }
 
@@ -302,7 +302,7 @@ fn existing_notes_open_on_show(c: &Ctx) {
     store.save(&mut Note { text: "open".into(), ..Default::default() }, true).unwrap();
     store.save(&mut Note { text: "closed".into(), visible: false, ..Default::default() }, true).unwrap();
     c.app.load_notes(store);
-    c.app.run_command("show", false);
+    c.app.run_command("show");
     let shown: Vec<String> =
         c.app.windows().iter().filter(|w| w.window.is_visible()).map(|w| w.note.borrow().text.clone()).collect();
     assert_eq!(shown, ["open"]);
@@ -405,7 +405,7 @@ fn xpad_offer(app: &App) -> adw::AlertDialog {
 fn first_start_offers_xpad_import(c: &Ctx) {
     let xpad = xpad_dir_with_notes();
     c.app.set_xpad_dir(xpad.path());
-    c.app.run_command("show", false);
+    c.app.run_command("show");
     pump(50);
     let dialog = xpad_offer(&c.app);
     assert!(c.app.windows().is_empty(), "no blank note behind the offer");
@@ -421,7 +421,7 @@ fn first_start_offers_xpad_import(c: &Ctx) {
 fn declining_xpad_import_starts_fresh_and_never_asks_again(c: &Ctx) {
     let xpad = xpad_dir_with_notes();
     c.app.set_xpad_dir(xpad.path());
-    c.app.run_command("show", false);
+    c.app.run_command("show");
     pump(50);
     xpad_offer(&c.app).emit_by_name::<()>("response", &[&"skip"]);
     pump(50);
@@ -431,7 +431,7 @@ fn declining_xpad_import_starts_fresh_and_never_asks_again(c: &Ctx) {
 
     let id = c.app.windows()[0].id();
     c.app.delete_note(&id);
-    c.app.run_command("show", false);
+    c.app.run_command("show");
     pump(50);
     assert!(c.app.manager().is_none(), "not offered a second time");
     assert_eq!(visible_texts(&c.app), [""]);
@@ -456,6 +456,130 @@ fn deleting_a_hidden_note_from_the_manager_asks_there(c: &Ctx) {
     assert!(m.row_ids().is_empty());
     assert!(dir.path().join("trash").join(format!("{}.md", note.id)).exists());
     m.window.close();
+}
+
+// -- tray icon -----------------------------------------------------------------
+
+/// Call a D-Bus method without blocking the main loop (the app answers on it).
+fn dbus_call(
+    conn: &gio::DBusConnection,
+    dest: &str,
+    path: &str,
+    iface: &str,
+    method: &str,
+    args: glib::Variant,
+) -> glib::Variant {
+    let result = Rc::new(RefCell::new(None));
+    let slot = result.clone();
+    conn.call(
+        Some(dest),
+        path,
+        iface,
+        method,
+        Some(&args),
+        None,
+        gio::DBusCallFlags::NONE,
+        2000,
+        gio::Cancellable::NONE,
+        move |r| *slot.borrow_mut() = Some(r),
+    );
+    let until = Instant::now() + Duration::from_secs(3);
+    while result.borrow().is_none() && Instant::now() < until {
+        pump(10);
+    }
+    let reply = result.borrow_mut().take().expect("a D-Bus reply in time");
+    reply.unwrap_or_else(|e| panic!("{iface}.{method}: {e}"))
+}
+
+fn tray_icon_registers_and_works(c: &Ctx) {
+    let conn = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE).expect("a session bus");
+    // A stand-in for the tray (Waybar, KDE...): the watcher items register with.
+    let node = gio::DBusNodeInfo::for_xml(
+        r#"<node><interface name="org.kde.StatusNotifierWatcher"><method name="RegisterStatusNotifierItem">
+           <arg type="s" direction="in"/></method></interface></node>"#,
+    )
+    .unwrap();
+    let registered = Rc::new(RefCell::new(None::<String>));
+    let slot = registered.clone();
+    let watcher = conn
+        .register_object("/StatusNotifierWatcher", &node.lookup_interface("org.kde.StatusNotifierWatcher").unwrap())
+        .method_call(move |_, _, _, _, _, params, invocation| {
+            *slot.borrow_mut() = params.child_value(0).str().map(String::from);
+            invocation.return_value(None);
+        })
+        .build()
+        .unwrap();
+    let owner = gio::bus_own_name_on_connection(
+        &conn,
+        "org.kde.StatusNotifierWatcher",
+        gio::BusNameOwnerFlags::NONE,
+        |_, _| {},
+        |_, _| {},
+    );
+    let until = Instant::now() + Duration::from_secs(3);
+    while registered.borrow().is_none() && Instant::now() < until {
+        pump(10);
+    }
+    let item = registered.borrow().clone().expect("the app registers its tray icon");
+    assert_eq!(Some(item.clone()), conn.unique_name().map(String::from), "registered under the app's bus name");
+
+    let get = |prop: &str| {
+        let reply = dbus_call(
+            &conn,
+            &item,
+            "/StatusNotifierItem",
+            "org.freedesktop.DBus.Properties",
+            "Get",
+            ("org.kde.StatusNotifierItem", prop).to_variant(),
+        );
+        reply.child_value(0).as_variant().unwrap()
+    };
+    assert_eq!(get("Title").str(), Some("Realer Xpad"));
+    let pixmaps = get("IconPixmap").get::<Vec<(i32, i32, Vec<u8>)>>().unwrap();
+    assert!(!pixmaps.is_empty(), "the logo, as pixels");
+    for (w, h, data) in &pixmaps {
+        assert_eq!(data.len(), (*w * *h * 4) as usize);
+        assert!(data.chunks(4).any(|p| p[0] > 0), "not fully transparent");
+    }
+
+    // Left click hides the notes, and shows them again.
+    let win = c.new_window();
+    pump(50);
+    let click = || {
+        dbus_call(
+            &conn,
+            &item,
+            "/StatusNotifierItem",
+            "org.kde.StatusNotifierItem",
+            "Activate",
+            (0i32, 0i32).to_variant(),
+        )
+    };
+    click();
+    assert!(!win.window.is_visible());
+    click();
+    assert!(win.window.is_visible());
+
+    // The menu, as the tray reads it (GDBus checks the reply types).
+    let reply = dbus_call(
+        &conn,
+        &item,
+        "/MenuBar",
+        "com.canonical.dbusmenu",
+        "GetLayout",
+        (0i32, -1i32, Vec::<String>::new()).to_variant(),
+    );
+    assert_eq!(reply.type_().as_str(), "(u(ia{sv}av))");
+    assert_eq!(reply.child_value(1).child_value(2).n_children(), 6);
+
+    // The menu's "New Note".
+    let notes = c.app.notes().len();
+    let event = (1i32, "clicked", glib::Variant::from_variant(&"".to_variant()), 0u32).to_variant();
+    dbus_call(&conn, &item, "/MenuBar", "com.canonical.dbusmenu", "Event", event);
+    assert_eq!(c.app.notes().len(), notes + 1);
+
+    gio::bus_unown_name(owner);
+    conn.unregister_object(watcher).unwrap();
 }
 
 /// A named UI test.
@@ -496,6 +620,7 @@ fn main() {
         ("read_view_text_click_enters_edit_at_position", read_view_text_click_enters_edit_at_position),
         ("manager_lists_and_filters", manager_lists_and_filters),
         ("deleting_a_hidden_note_from_the_manager_asks_there", deleting_a_hidden_note_from_the_manager_asks_there),
+        ("tray_icon_registers_and_works", tray_icon_registers_and_works),
         ("import_xpad_shows_imported_notes", import_xpad_shows_imported_notes),
         ("first_start_offers_xpad_import", first_start_offers_xpad_import),
         (

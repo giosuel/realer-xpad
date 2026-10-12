@@ -1,6 +1,6 @@
 //! Application: single instance, CLI commands, note lifecycle.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -13,7 +13,7 @@ use crate::hypr::Hyprland;
 use crate::manager::Manager;
 use crate::note_window::NoteWindow;
 use crate::store::{Note, NoteStore, default_data_dir};
-use crate::{APP_ID, APP_NAME, VERSION, cli, theme, xpad};
+use crate::{APP_ID, APP_NAME, VERSION, cli, theme, tray, xpad};
 
 const GEOMETRY_POLL_S: u32 = 3;
 const PLACE_RETRIES: u32 = 20;
@@ -29,7 +29,9 @@ pub struct AppInner {
     notes: RefCell<HashMap<String, Rc<RefCell<Note>>>>,
     windows: RefCell<HashMap<String, NoteWindow>>,
     manager: RefCell<Option<Manager>>,
-    started: Cell<bool>,
+    /// Keeps the app running with every window closed, like xpad, until Quit.
+    hold: RefCell<Option<gio::ApplicationHoldGuard>>,
+    tray: RefCell<Option<tray::Tray>>,
     /// Where to look for xpad notes to import.
     xpad_dir: RefCell<PathBuf>,
 }
@@ -56,7 +58,8 @@ impl App {
             notes: RefCell::default(),
             windows: RefCell::default(),
             manager: RefCell::default(),
-            started: Cell::new(false),
+            hold: RefCell::default(),
+            tray: RefCell::default(),
             xpad_dir: RefCell::new(xpad::default_dir()),
         }));
         let weak = Rc::downgrade(&this.0);
@@ -123,6 +126,8 @@ impl App {
                 self.0.app.set_accels_for_action(&format!("app.{name}"), &[accel]);
             }
         }
+        *self.0.hold.borrow_mut() = Some(self.0.app.hold());
+        self.start_tray();
         if self.hypr().is_some() {
             let weak = Rc::downgrade(&self.0);
             glib::timeout_add_seconds_local(GEOMETRY_POLL_S, move || match weak.upgrade() {
@@ -153,7 +158,6 @@ impl App {
             }
             _ => {}
         }
-        let first = !self.0.started.replace(true);
         if cmd == "import-xpad" {
             let dir = self.xpad_dir();
             match self.import_xpad() {
@@ -166,14 +170,14 @@ impl App {
                     return glib::ExitCode::FAILURE;
                 }
             }
-            self.run_command("show", first);
+            self.run_command("show");
             return glib::ExitCode::SUCCESS;
         }
-        self.run_command(cmd, first);
+        self.run_command(cmd);
         glib::ExitCode::SUCCESS
     }
 
-    pub fn run_command(&self, cmd: &str, first: bool) {
+    pub fn run_command(&self, cmd: &str) {
         match cmd {
             "new" => self.new_note(),
             "toggle" if self.any_visible() => self.hide_all(),
@@ -194,9 +198,6 @@ impl App {
                 }
             }
         }
-        if first && self.0.app.windows().is_empty() {
-            self.0.app.quit();
-        }
     }
 
     pub fn quit_app(&self) {
@@ -206,7 +207,33 @@ impl App {
             }
             win.save_now();
         }
+        self.0.tray.borrow_mut().take();
+        self.0.hold.borrow_mut().take();
         self.0.app.quit();
+    }
+
+    /// The tray icon, unless REALER_XPAD_NO_TRAY is set or there's no session bus.
+    fn start_tray(&self) {
+        if std::env::var_os("REALER_XPAD_NO_TRAY").is_some() {
+            return;
+        }
+        let Ok(connection) = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE) else { return };
+        let weak = Rc::downgrade(&self.0);
+        let on_action = move |action| {
+            let Some(app) = weak.upgrade().map(App) else { return };
+            match action {
+                tray::Action::Toggle => app.run_command("toggle"),
+                tray::Action::NewNote => app.new_note(),
+                tray::Action::ShowAll => app.run_command("show"),
+                tray::Action::HideAll => app.hide_all(),
+                tray::Action::Manager => app.open_manager(),
+                tray::Action::Quit => app.quit_app(),
+            }
+        };
+        match tray::start(&connection, on_action) {
+            Ok(tray) => *self.0.tray.borrow_mut() = Some(tray),
+            Err(err) => eprintln!("realer-xpad: no tray icon: {err}"),
+        }
     }
 
     // -- notes ----------------------------------------------------------

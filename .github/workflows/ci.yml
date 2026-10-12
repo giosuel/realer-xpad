@@ -57,7 +57,7 @@ jobs:
           if command -v apt-get >/dev/null; then
             apt-get update
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-              build-essential pkg-config libgtk-4-dev libadwaita-1-dev \
+              build-essential pkg-config libgtk-4-dev libadwaita-1-dev librsvg2-common \
               sway dbus fonts-dejavu-core curl ca-certificates git
           else
             dnf install -y gcc pkgconf-pkg-config gtk4-devel libadwaita-devel \

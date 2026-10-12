@@ -11,6 +11,7 @@ pub mod markdown;
 pub mod note_window;
 pub mod store;
 pub mod theme;
+pub mod tray;
 pub mod xpad;
 
 pub const APP_ID: &str = "ch.giosuel.RealerXpad";

@@ -61,7 +61,7 @@ Soft pastels by day and deep tones by night. Notes follow your system theme.
 <td valign="top">
 
 **🪟 Wayland-native, powered by Rust**<br>
-GTK 4 + libadwaita in a ~3 MB Rust binary, no Xwayland. On **Hyprland**, notes float, remember where you put them, and can be pinned to every workspace.
+GTK 4 + libadwaita in a ~3 MB Rust binary, no Xwayland. Runs in the background with a tray icon, like xpad. On **Hyprland**, notes float, remember where you put them, and can be pinned to every workspace.
 
 </td>
 <td valign="top">

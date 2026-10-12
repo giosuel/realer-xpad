@@ -53,9 +53,13 @@ title: FAQ
     Debian 13, Ubuntu 25.04, Fedora 41 and Arch all ship a new enough GTK.
 
 ??? question "Can I edit notes with another editor?"
-    Yes. Notes are plain `.md` files in `~/.local/share/realer-xpad/`. Edit them
-    while Realer Xpad isn't running, or it may overwrite your changes with its
-    own copy.
+    Yes. Notes are plain `.md` files in `~/.local/share/realer-xpad/`. The app
+    reads them when it starts, so restart it to see your changes. If you edit a
+    note's file while the app is running and then also change that note in the
+    app, the app saves its version and keeps yours in `trash/` as
+    `<id>-<time>.md`.
+
+    Files that aren't valid UTF-8 are skipped and left untouched.
 
 ??? question "Can I sync notes between machines?"
     Point `REALER_XPAD_DATA` at a synced folder (Syncthing, Nextcloud, a git

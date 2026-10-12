@@ -6,10 +6,14 @@
 //! * `<id>.json` – metadata (colour, size, position, drawing strokes, ...)
 //!
 //! Deleted notes are moved to `trash/` instead of being removed outright.
+//! Files are only rewritten when their content changed. If a note's `.md`
+//! was edited elsewhere while the app also changed it, the other version is
+//! kept in `trash/` rather than overwritten.
 //! The format is the same one the original Python version used.
 
 use std::fs;
-use std::io;
+use std::io::{self, Write};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -66,6 +70,17 @@ pub struct Note {
     pub strokes: Vec<Stroke>,
     pub created: f64,
     pub updated: f64,
+    /// What the files on disk hold, as of the last load or save.
+    #[serde(skip)]
+    pub disk: Option<OnDisk>,
+}
+
+/// A note's last loaded or saved state: text, strokes and metadata as JSON.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct OnDisk {
+    text: String,
+    strokes: String,
+    meta: String,
 }
 
 impl Default for Note {
@@ -85,6 +100,7 @@ impl Default for Note {
             strokes: Vec::new(),
             created: t,
             updated: t,
+            disk: None,
         }
     }
 }
@@ -114,7 +130,7 @@ pub struct NoteStore {
 impl NoteStore {
     pub fn new(dir: impl Into<PathBuf>) -> io::Result<Self> {
         let dir = dir.into();
-        fs::create_dir_all(&dir)?;
+        fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir)?;
         Ok(NoteStore { dir })
     }
 
@@ -144,26 +160,78 @@ impl NoteStore {
         let meta = fs::read_to_string(self.json(id)).ok()?;
         let mut note: Note = serde_json::from_str(&meta).ok()?;
         note.id = id.into();
-        note.text = fs::read_to_string(self.md(id)).unwrap_or_default();
+        note.text = match fs::read_to_string(self.md(id)) {
+            Ok(text) => text,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => String::new(),
+            Err(err) => {
+                // Not UTF-8, or unreadable: leave it alone rather than load it
+                // empty and later save that over it.
+                eprintln!("realer-xpad: skipping note {id}: {}: {err}", self.md(id).display());
+                return None;
+            }
+        };
         if !COLORS.contains(&note.color.as_str()) {
             note.color = DEFAULT_COLOR.into();
         }
+        note.disk = Some(OnDisk { text: note.text.clone(), strokes: strokes_json(&note)?, meta: meta_json(&note)? });
         Some(note)
     }
 
-    pub fn save(&self, note: &mut Note, touch: bool) -> io::Result<()> {
-        if touch {
+    /// Write whatever changed. Changing the text or drawing updates `updated`;
+    /// colour, size, position and visibility don't. Returns whether anything
+    /// was written.
+    pub fn save(&self, note: &mut Note) -> io::Result<bool> {
+        let strokes = strokes_json(note).ok_or_else(|| io::Error::other("strokes"))?;
+        let disk = note.disk.take();
+        let edited = disk.as_ref().is_some_and(|d| d.text != note.text || d.strokes != strokes);
+        if edited {
             note.updated = now();
         }
-        atomic_write(&self.md(&note.id), &note.text)?;
-        let meta = serde_json::to_string_pretty(note).map_err(io::Error::other)?;
-        atomic_write(&self.json(&note.id), &meta)
+        let result = self.write(note, disk.as_ref(), strokes);
+        if result.is_err() {
+            note.disk = disk; // try again next time
+        }
+        result
+    }
+
+    fn write(&self, note: &mut Note, disk: Option<&OnDisk>, strokes: String) -> io::Result<bool> {
+        let md = self.md(&note.id);
+        let mut wrote = false;
+        if disk.is_none_or(|d| d.text != note.text) {
+            if let Some(d) = disk
+                && let Ok(current) = fs::read_to_string(&md)
+                && current != d.text
+            {
+                // Edited elsewhere since we last read it: keep that version too.
+                self.trash_copy(&md, &format!("{}-{}.md", note.id, now() as u64))?;
+            }
+            atomic_write(&md, &note.text)?;
+            wrote = true;
+        }
+        let meta = meta_json(note).ok_or_else(|| io::Error::other("metadata"))?;
+        if disk.is_none_or(|d| d.meta != meta) {
+            atomic_write(&self.json(&note.id), &meta)?;
+            wrote = true;
+        }
+        note.disk = Some(OnDisk { text: note.text.clone(), strokes, meta });
+        Ok(wrote)
+    }
+
+    fn trash(&self) -> io::Result<PathBuf> {
+        let trash = self.dir.join("trash");
+        fs::DirBuilder::new().recursive(true).mode(0o700).create(&trash)?;
+        Ok(trash)
+    }
+
+    fn trash_copy(&self, path: &Path, name: &str) -> io::Result<()> {
+        fs::copy(path, self.trash()?.join(name)).map(drop)
     }
 
     pub fn delete(&self, id: &str) -> io::Result<()> {
-        let trash = self.dir.join("trash");
-        fs::create_dir_all(&trash)?;
-        for path in [self.md(id), self.json(id)] {
+        let trash = self.trash()?;
+        // Metadata first: a note without its .json no longer loads, while a
+        // .json without its .md would load as an empty note.
+        for path in [self.json(id), self.md(id)] {
             if path.exists() {
                 fs::rename(&path, trash.join(path.file_name().unwrap()))?;
             }
@@ -182,11 +250,27 @@ impl NoteStore {
     }
 }
 
-fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
+fn strokes_json(note: &Note) -> Option<String> {
+    serde_json::to_string(&note.strokes).ok()
+}
+
+fn meta_json(note: &Note) -> Option<String> {
+    serde_json::to_string_pretty(note).ok()
+}
+
+/// Write to a temporary file, flush it to disk, then rename it over `path`, so a
+/// crash leaves either the old or the new content, never an empty file.
+pub(crate) fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".tmp");
-    fs::write(&tmp, content)?;
-    fs::rename(&tmp, path)
+    let mut file = fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&tmp)?;
+    file.write_all(content.as_bytes())?;
+    file.sync_all()?;
+    fs::rename(&tmp, path)?;
+    if let Some(dir) = path.parent() {
+        fs::File::open(dir)?.sync_all()?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -211,7 +295,7 @@ mod tests {
             strokes: vec![stroke],
             ..Default::default()
         };
-        store.save(&mut note, true).unwrap();
+        store.save(&mut note).unwrap();
         assert_eq!(fs::read_to_string(store.md(&note.id)).unwrap(), "# Hi\nthere");
         assert_eq!(store.load(&note.id).unwrap(), note);
     }
@@ -221,8 +305,8 @@ mod tests {
         let (_d, store) = store();
         let mut a = Note { text: "a".into(), created: 2.0, ..Default::default() };
         let mut b = Note { text: "b".into(), created: 1.0, ..Default::default() };
-        store.save(&mut a, true).unwrap();
-        store.save(&mut b, true).unwrap();
+        store.save(&mut a).unwrap();
+        store.save(&mut b).unwrap();
         let texts: Vec<_> = store.load_all().into_iter().map(|n| n.text).collect();
         assert_eq!(texts, ["b", "a"]);
     }
@@ -231,11 +315,66 @@ mod tests {
     fn delete_moves_to_trash_and_restore() {
         let (_d, store) = store();
         let mut note = Note { text: "bye".into(), ..Default::default() };
-        store.save(&mut note, true).unwrap();
+        store.save(&mut note).unwrap();
         store.delete(&note.id).unwrap();
         assert!(store.load_all().is_empty());
         assert!(store.dir.join("trash").join(format!("{}.md", note.id)).exists());
         assert_eq!(store.restore(&note.id).unwrap().text, "bye");
+    }
+
+    #[test]
+    fn unreadable_text_is_skipped_and_left_alone() {
+        let (_d, store) = store();
+        let mut note = Note { text: "x".into(), ..Default::default() };
+        store.save(&mut note).unwrap();
+        fs::write(store.md(&note.id), b"caf\xe9 latin-1").unwrap();
+        assert!(store.load_all().is_empty(), "not loaded as an empty note");
+        assert_eq!(fs::read(store.md(&note.id)).unwrap(), b"caf\xe9 latin-1");
+    }
+
+    #[test]
+    fn only_changes_are_written_and_only_edits_count_as_edits() {
+        let (_d, store) = store();
+        let mut note = Note { text: "a".into(), updated: 1.0, ..Default::default() };
+        assert!(store.save(&mut note).unwrap(), "a new note is written");
+        assert!(!store.save(&mut note).unwrap(), "nothing changed");
+        note.width = 400;
+        assert!(store.save(&mut note).unwrap());
+        assert_eq!(note.updated, 1.0, "resizing isn't an edit");
+        note.text = "b".into();
+        store.save(&mut note).unwrap();
+        assert!(note.updated > 1.0);
+        let mut loaded = store.load(&note.id).unwrap();
+        assert!(!store.save(&mut loaded).unwrap(), "loading then saving changes nothing");
+    }
+
+    #[test]
+    fn edits_made_elsewhere_are_kept() {
+        let (_d, store) = store();
+        let mut note = Note { text: "mine".into(), ..Default::default() };
+        store.save(&mut note).unwrap();
+        fs::write(store.md(&note.id), "edited in vim").unwrap();
+        note.width = 500;
+        store.save(&mut note).unwrap();
+        assert_eq!(fs::read_to_string(store.md(&note.id)).unwrap(), "edited in vim", "text untouched");
+        note.text = "mine, changed".into();
+        store.save(&mut note).unwrap();
+        let kept: Vec<_> = fs::read_dir(store.dir.join("trash")).unwrap().flatten().map(|e| e.path()).collect();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(fs::read_to_string(&kept[0]).unwrap(), "edited in vim");
+    }
+
+    #[test]
+    fn notes_are_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        let store = NoteStore::new(d.path().join("notes")).unwrap();
+        let mut note = Note::default();
+        store.save(&mut note).unwrap();
+        let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&store.dir), 0o700);
+        assert_eq!(mode(&store.md(&note.id)), 0o600);
+        assert_eq!(mode(&store.json(&note.id)), 0o600);
     }
 
     #[test]

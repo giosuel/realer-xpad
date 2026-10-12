@@ -786,14 +786,14 @@ impl NoteWindow {
             let mut n = self.note.borrow_mut();
             (n.width, n.height) = (self.window.width(), self.window.height());
         }
-        app.save_note(&self.note, true);
+        app.save_note(&self.note);
     }
 
     pub fn show_note(&self) {
         self.note.borrow_mut().visible = true;
         self.window.present();
         if let Some(app) = self.app() {
-            app.save_note(&self.note, false);
+            app.save_note(&self.note);
         }
     }
 

@@ -262,6 +262,8 @@ pub struct Rendered {
     pub checkboxes: Vec<(usize, usize, usize)>,
     /// Kept source runs: `(src_start, src_end, rendered_start)`.
     pub runs: Vec<(usize, usize, usize)>,
+    /// Length of the source in chars.
+    pub source_len: usize,
 }
 
 impl Rendered {
@@ -277,6 +279,41 @@ impl Rendered {
         }
         self.runs.last().map_or(0, |r| r.1)
     }
+
+    /// The source range behind the rendered selection `start..end`, so that
+    /// copying from the read view gives Markdown: a selection that starts at
+    /// the beginning of a run takes the markers before it (`- `, `# `, `**`),
+    /// and one that ends at the end of a run takes the closing markers after
+    /// it, unless the run ends a line (those belong to the next line).
+    pub fn source_range(&self, start: usize, end: usize) -> (usize, usize) {
+        let ends_line = end > 0 && self.text.chars().nth(end - 1) == Some('\n');
+        let mut from = None;
+        let mut to = None;
+        let mut prev_end = 0;
+        for (i, &(s, e, o)) in self.runs.iter().enumerate() {
+            let len = e - s;
+            if from.is_none() {
+                if start <= o {
+                    from = Some(prev_end);
+                } else if start < o + len {
+                    from = Some(s + start - o);
+                }
+            }
+            if to.is_none() {
+                let next = self.runs.get(i + 1).map_or(self.source_len, |r| r.0);
+                if end <= o {
+                    to = Some(s);
+                } else if end < o + len || (end == o + len && ends_line) {
+                    to = Some(s + end - o);
+                } else if end == o + len {
+                    to = Some(next);
+                }
+            }
+            prev_end = e;
+        }
+        let from = from.unwrap_or(prev_end);
+        (from, to.unwrap_or(self.source_len).max(from))
+    }
 }
 
 /// Build the read view: markers are removed or replaced, spans remapped.
@@ -285,7 +322,7 @@ pub fn render(source: &str, parsed: &Parsed) -> Rendered {
     let mut markers: Vec<&Marker> = parsed.markers.iter().collect();
     markers.sort_by_key(|m| m.start);
 
-    let mut out = Rendered::default();
+    let mut out = Rendered { source_len: chars.len(), ..Rendered::default() };
     let mut extra = Vec::new();
     let (mut src, mut pos) = (0, 0);
     for mk in markers {
@@ -546,6 +583,30 @@ mod tests {
         assert_eq!(chars[r.to_source(0)], 'H');
         assert_eq!(chars[r.to_source(3)], 't');
         assert_eq!(r.to_source(r.text.chars().count()), 12);
+    }
+
+    #[test]
+    fn copying_the_read_view_gives_markdown() {
+        let copy = |src: &str, a: usize, b: usize| {
+            let r = rendered(src);
+            let (a, b) = r.source_range(a, b);
+            slice(src, a, b)
+        };
+        let src = "# Milestones\n- Tabs\n- **Lab** menu\n- [ ] Netlab";
+        let r = rendered(src);
+        assert_eq!(r.text, "Milestones\n• Tabs\n• Lab menu\n☐ Netlab");
+        let all = r.text.chars().count();
+        assert_eq!(copy(src, 0, all), src);
+        // Whole lines, from the bullet or from the text after it.
+        assert_eq!(copy(src, 11, 18), "- Tabs\n");
+        assert_eq!(copy(src, 13, 17), "- Tabs");
+        // Inside a line, no markers are added; bold kept whole at its ends.
+        assert_eq!(copy(src, 14, 16), "ab");
+        assert_eq!(copy(src, 20, 28), "- **Lab** menu");
+        assert_eq!(copy(src, 29, all), "- [ ] Netlab");
+        assert_eq!(copy("a **b** c", 2, 3), "**b**");
+        assert_eq!(copy("a **b** c", 2, 5), "**b** c");
+        assert_eq!(copy("", 0, 0), "");
     }
 
     #[test]

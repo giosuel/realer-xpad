@@ -199,6 +199,17 @@ impl MarkdownEditor {
         });
         self.read_view.add_controller(click);
 
+        // Copy the Markdown behind the selection, not its rendering (`•`, `☐`).
+        let weak = self.weak();
+        self.read_view.connect_copy_clipboard(move |view| {
+            let Some(ed) = Self::upgrade(&weak) else { return };
+            let Some((a, b)) = view.buffer().selection_bounds() else { return };
+            view.stop_signal_emission_by_name("copy-clipboard");
+            let (a, b) = ed.rendered.borrow().source_range(a.offset() as usize, b.offset() as usize);
+            let (a, b) = (ed.buffer.iter_at_offset(a as i32), ed.buffer.iter_at_offset(b as i32));
+            view.clipboard().set_text(&ed.buffer.text(&a, &b, true));
+        });
+
         let motion = gtk::EventControllerMotion::new();
         let weak = self.weak();
         motion.connect_motion(move |_, x, y| {

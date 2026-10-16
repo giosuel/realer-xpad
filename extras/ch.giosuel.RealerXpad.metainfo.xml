@@ -34,6 +34,11 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.6" date="2026-10-16">
+      <description>
+        <p>Copying text from a note now copies its Markdown (list markers, checkboxes, headings and emphasis) instead of the rendered bullets and boxes.</p>
+      </description>
+    </release>
     <release version="0.1.5" date="2026-10-12">
       <description>
         <ul>

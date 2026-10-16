@@ -444,6 +444,9 @@ impl MarkdownEditor {
 
     /// Tab / Shift+Tab on a list item: indent or outdent by two spaces.
     pub fn indent(&self, outdent: bool) -> bool {
+        if self.indent_selection(outdent) {
+            return true;
+        }
         let (start, _) = self.current_line();
         let mut line_end = start;
         if !line_end.ends_line() {
@@ -464,6 +467,48 @@ impl MarkdownEditor {
         } else {
             buf.insert(&mut buf.iter_at_offset(at), "  ");
         }
+        buf.end_user_action();
+        true
+    }
+
+    /// Tab / Shift+Tab with a selection over several lines: indent or
+    /// outdent each of them (blank lines stay empty) and keep them selected.
+    fn indent_selection(&self, outdent: bool) -> bool {
+        let buf = &self.buffer;
+        let Some((start, mut end)) = buf.selection_bounds() else { return false };
+        if end.starts_line() && end.line() > start.line() {
+            end.backward_char(); // ends at the start of a line: that line isn't selected
+        }
+        let (first, last) = (start.line(), end.line());
+        if first == last {
+            return false;
+        }
+        buf.begin_user_action();
+        for line in first..=last {
+            let Some(at) = buf.iter_at_line(line) else { continue };
+            let mut line_end = at;
+            if !line_end.ends_line() {
+                line_end.forward_to_line_end();
+            }
+            let text = buf.text(&at, &line_end, true);
+            let at = at.offset();
+            if outdent {
+                let n = (text.len() - text.trim_start_matches(' ').len()).min(2) as i32;
+                if n > 0 {
+                    buf.delete(&mut buf.iter_at_offset(at), &mut buf.iter_at_offset(at + n));
+                }
+            } else if !text.trim().is_empty() {
+                buf.insert(&mut buf.iter_at_offset(at), "  ");
+            }
+        }
+        let (Some(a), Some(mut b)) = (buf.iter_at_line(first), buf.iter_at_line(last)) else {
+            buf.end_user_action();
+            return true;
+        };
+        if !b.ends_line() {
+            b.forward_to_line_end();
+        }
+        buf.select_range(&a, &b);
         buf.end_user_action();
         true
     }

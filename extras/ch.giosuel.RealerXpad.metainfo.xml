@@ -34,6 +34,16 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.1.7" date="2026-10-17">
+      <description>
+        <ul>
+          <li>Typing, deleting or pasting in a rendered note switches it to editing and replaces the selection</li>
+          <li>Ctrl+plus and Ctrl+minus make the text of every note larger or smaller, Ctrl+0 resets it</li>
+          <li>Task checkboxes are bigger and easier to click</li>
+          <li>Tab and Shift+Tab indent and outdent every selected line</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.6" date="2026-10-16">
       <description>
         <p>Copying text from a note now copies its Markdown (list markers, checkboxes, headings and emphasis) instead of the rendered bullets and boxes.</p>

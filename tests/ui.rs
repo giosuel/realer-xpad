@@ -458,6 +458,37 @@ fn read_view_text_click_enters_edit_at_position(c: &Ctx) {
     assert_eq!(win.editor.text().chars().nth(cursor), Some('w'));
 }
 
+fn editing_from_the_read_view_replaces_the_selection(c: &Ctx) {
+    let win = c.new_window();
+    win.editor.set_text("- one\n- **two** three");
+    win.editor.show_read();
+    pump(100);
+    // "two" in "• one\n• two three"
+    let buf = win.editor.read_view.buffer();
+    buf.select_range(&buf.iter_at_offset(8), &buf.iter_at_offset(11));
+    win.editor.edit_from_read();
+    assert!(!win.editor.reading());
+    let ed = &win.editor;
+    let (a, b) = ed.buffer.selection_bounds().unwrap();
+    assert_eq!(ed.buffer.text(&a, &b, true).as_str(), "**two**");
+    ed.buffer.delete_selection(true, true);
+    assert_eq!(ed.text(), "- one\n-  three");
+
+    // Pasting while reading pastes over the selection.
+    ed.read_view.clipboard().set_text("pasted");
+    ed.set_text("- one\n- two");
+    ed.show_read();
+    let buf = ed.read_view.buffer();
+    buf.select_range(&buf.iter_at_offset(8), &buf.end_iter()); // "two"
+    ed.paste_in_read();
+    let until = Instant::now() + Duration::from_secs(2);
+    while ed.text() != "- one\n- pasted" && Instant::now() < until {
+        pump(20);
+    }
+    assert!(!ed.reading());
+    assert_eq!(ed.text(), "- one\n- pasted");
+}
+
 fn manager_lists_and_filters(c: &Ctx) {
     let a = c.new_window();
     let b = c.new_window();
@@ -733,6 +764,7 @@ fn main() {
         ("editor_restyles_after_typing", editor_restyles_after_typing),
         ("read_view_renders_clean_text", read_view_renders_clean_text),
         ("copying_from_the_read_view_gives_markdown", copying_from_the_read_view_gives_markdown),
+        ("editing_from_the_read_view_replaces_the_selection", editing_from_the_read_view_replaces_the_selection),
         ("toggle_checkbox_is_undoable", toggle_checkbox_is_undoable),
         ("list_continuation_and_exit", list_continuation_and_exit),
         ("wrap_selection_bold", wrap_selection_bold),

@@ -148,12 +148,12 @@ fn parse_line(line: &Line, out: &mut Parsed) {
     if let Some(m) = first(&RE_HEADING, text) {
         let level = m[1].len().min(3);
         let stop = m.get(0).unwrap().end();
-        out.markers.push(marker(line.base, line.at(stop), "", "marker"));
+        out.markers.push(marker(line.base, line.at(stop), "", "prefix"));
         out.spans.push(span(["h1", "h2", "h3"][level - 1], line.at(stop), end));
         body = stop;
     } else if let Some(m) = first(&RE_QUOTE, text) {
         let stop = m.get(0).unwrap().end();
-        out.markers.push(marker(line.base, line.at(stop), "", "marker"));
+        out.markers.push(marker(line.base, line.at(stop), "", "prefix"));
         out.spans.push(span("quote", line.at(stop), end));
         body = stop;
     } else if let Some(m) = first(&RE_CHECKBOX, text) {
@@ -264,7 +264,13 @@ pub struct Rendered {
     pub runs: Vec<(usize, usize, usize)>,
     /// Length of the source in chars.
     pub source_len: usize,
+    /// Source ranges of the markers that start a line (`# `, `- `, `> `…).
+    pub line_markers: Vec<(usize, usize)>,
 }
+
+/// Markers that belong to a line rather than to the text in it. Headings and
+/// quotes are tagged `prefix`; the editor styles them as plain markers.
+const LINE_MARKERS: [&str; 5] = ["prefix", "bullet", "checkbox", "hr", "fence"];
 
 impl Rendered {
     /// Map a rendered offset back to the closest source offset.
@@ -282,10 +288,12 @@ impl Rendered {
 
     /// The source range behind the rendered selection `start..end`, so that
     /// copying from the read view gives Markdown: a selection that starts at
-    /// the beginning of a run takes the markers before it (`- `, `# `, `**`),
-    /// and one that ends at the end of a run takes the closing markers after
-    /// it, unless the run ends a line (those belong to the next line).
-    pub fn source_range(&self, start: usize, end: usize) -> (usize, usize) {
+    /// the beginning of a run takes the markers before it (`**`, and with
+    /// `line_markers` also `- ` or `# `), and one that ends at the end of a
+    /// run takes the closing markers after it, unless the run ends a line
+    /// (those belong to the next line). A selection that starts on a shown
+    /// marker (`•`, `☐`) always takes it.
+    pub fn source_range(&self, start: usize, end: usize, line_markers: bool) -> (usize, usize) {
         let ends_line = end > 0 && self.text.chars().nth(end - 1) == Some('\n');
         let mut from = None;
         let mut to = None;
@@ -293,8 +301,11 @@ impl Rendered {
         for (i, &(s, e, o)) in self.runs.iter().enumerate() {
             let len = e - s;
             if from.is_none() {
-                if start <= o {
+                if start < o || (start == o && line_markers) {
                     from = Some(prev_end);
+                } else if start == o {
+                    let skip = self.line_markers.iter().filter(|m| prev_end <= m.0 && m.1 <= s).map(|m| m.1).max();
+                    from = Some(skip.unwrap_or(prev_end));
                 } else if start < o + len {
                     from = Some(s + start - o);
                 }
@@ -333,6 +344,9 @@ pub fn render(source: &str, parsed: &Parsed) -> Rendered {
             out.runs.push((src, mk.start, pos));
             out.text.extend(&chars[src..mk.start]);
             pos += mk.start - src;
+        }
+        if LINE_MARKERS.contains(&mk.tag) {
+            out.line_markers.push((mk.start, mk.end));
         }
         if !mk.replace.is_empty() {
             if mk.tag == "checkbox"
@@ -589,7 +603,12 @@ mod tests {
     fn copying_the_read_view_gives_markdown() {
         let copy = |src: &str, a: usize, b: usize| {
             let r = rendered(src);
-            let (a, b) = r.source_range(a, b);
+            let (a, b) = r.source_range(a, b, true);
+            slice(src, a, b)
+        };
+        let edit = |src: &str, a: usize, b: usize| {
+            let r = rendered(src);
+            let (a, b) = r.source_range(a, b, false);
             slice(src, a, b)
         };
         let src = "# Milestones\n- Tabs\n- **Lab** menu\n- [ ] Netlab";
@@ -607,6 +626,14 @@ mod tests {
         assert_eq!(copy("a **b** c", 2, 3), "**b**");
         assert_eq!(copy("a **b** c", 2, 5), "**b** c");
         assert_eq!(copy("", 0, 0), "");
+        // Typing over a selection keeps the line's marker unless the shown
+        // marker itself was selected.
+        assert_eq!(edit(src, 0, 10), "Milestones");
+        assert_eq!(edit(src, 13, 17), "Tabs");
+        assert_eq!(edit(src, 11, 17), "- Tabs");
+        assert_eq!(edit(src, 20, 23), "**Lab**");
+        assert_eq!(edit(src, 31, all), "Netlab");
+        assert_eq!(edit("a **b** c", 2, 3), "**b**");
     }
 
     #[test]

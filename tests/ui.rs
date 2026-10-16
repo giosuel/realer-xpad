@@ -446,6 +446,45 @@ fn read_view_checkbox_click(c: &Ctx) {
     assert!(win.editor.reading()); // toggling does not leave the read view
 }
 
+fn checkbox_click_area_covers_the_box(c: &Ctx) {
+    let win = c.new_window();
+    let ed = &win.editor;
+    ed.set_text("- [ ] buy milk");
+    ed.show_read();
+    pump(200);
+    let view = &ed.read_view;
+    let buf = view.buffer();
+    let glyph = view.iter_location(&buf.iter_at_offset(0));
+    let space = view.iter_location(&buf.iter_at_offset(1));
+    let text = view.iter_location(&buf.iter_at_offset(2));
+    assert!(glyph.height() > text.height(), "the box is drawn larger than the text");
+    let at = |bx: i32, by: i32| {
+        let (x, y) = view.buffer_to_window_coords(gtk::TextWindowType::Widget, bx, by);
+        (x as f64, y as f64)
+    };
+    let mid = glyph.y() + glyph.height() / 2;
+    // Just left of the box, the box's right edge, the space after it, and
+    // just above it all toggle.
+    let hits = [
+        (glyph.x() - 3, mid),
+        (glyph.x() + glyph.width() - 1, mid),
+        (space.x() + space.width() - 1, mid),
+        (glyph.x() + glyph.width() / 2, glyph.y() - 2),
+    ];
+    for (n, (bx, by)) in hits.into_iter().enumerate() {
+        let (x, y) = at(bx, by);
+        ed.read_click(x, y);
+        let want = if n % 2 == 0 { "- [x] buy milk" } else { "- [ ] buy milk" };
+        assert_eq!(ed.text(), want, "click {n} at ({bx}, {by})");
+        assert!(ed.reading());
+    }
+    // The text after it is for editing.
+    let (x, y) = at(text.x() + text.width() + 2, mid);
+    ed.read_click(x, y);
+    assert_eq!(ed.text(), "- [ ] buy milk");
+    assert!(!ed.reading());
+}
+
 fn read_view_text_click_enters_edit_at_position(c: &Ctx) {
     let win = c.new_window();
     win.editor.set_text("**hello** world");
@@ -787,6 +826,7 @@ fn main() {
         ("delete_empty_note_skips_confirmation", delete_empty_note_skips_confirmation),
         ("existing_notes_open_on_show", existing_notes_open_on_show),
         ("read_view_checkbox_click", read_view_checkbox_click),
+        ("checkbox_click_area_covers_the_box", checkbox_click_area_covers_the_box),
         ("read_view_text_click_enters_edit_at_position", read_view_text_click_enters_edit_at_position),
         ("manager_lists_and_filters", manager_lists_and_filters),
         ("deleting_a_hidden_note_from_the_manager_asks_there", deleting_a_hidden_note_from_the_manager_asks_there),

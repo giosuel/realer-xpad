@@ -355,7 +355,9 @@ pub fn render(source: &str, parsed: &Parsed) -> Rendered {
                 out.checkboxes.push((pos, pos + 1, i));
             }
             let len = mk.replace.chars().count();
-            extra.push(Span { tag: mk.tag, start: pos, end: pos + len, data: None });
+            // A checkbox's tag covers just the box, which the read view enlarges.
+            let styled = if mk.tag == "checkbox" { 1 } else { len };
+            extra.push(Span { tag: mk.tag, start: pos, end: pos + styled, data: None });
             out.text.push_str(mk.replace);
             pos += len;
         }

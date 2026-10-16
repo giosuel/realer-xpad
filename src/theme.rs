@@ -8,6 +8,39 @@ use crate::drawing::INK_COLORS;
 
 pub const RESOURCE_BASE: &str = "/ch/giosuel/RealerXpad";
 
+/// Note text size at 100 % (also in note.css).
+pub const TEXT_PT: f64 = 11.0;
+/// Text sizes that Ctrl+plus / Ctrl+minus step through.
+pub const TEXT_SCALES: [f64; 11] = [0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.4, 1.6, 1.8, 2.0, 2.5];
+
+/// The next text scale up (`larger`) or down from `scale`, staying in range.
+pub fn step_text_scale(scale: f64, larger: bool) -> f64 {
+    let next = if larger {
+        TEXT_SCALES.iter().find(|&&s| s > scale + 1e-3)
+    } else {
+        TEXT_SCALES.iter().rev().find(|&&s| s < scale - 1e-3)
+    };
+    next.copied().unwrap_or(scale).clamp(TEXT_SCALES[0], TEXT_SCALES[TEXT_SCALES.len() - 1])
+}
+
+thread_local! {
+    static TEXT_SIZE: gtk::CssProvider = {
+        let provider = gtk::CssProvider::new();
+        if let Some(display) = gdk::Display::default() {
+            let priority = gtk::STYLE_PROVIDER_PRIORITY_APPLICATION + 2; // above note.css
+            gtk::style_context_add_provider_for_display(&display, &provider, priority);
+        }
+        provider
+    };
+}
+
+/// Size the text of every note at `scale` × [`TEXT_PT`].
+pub fn set_text_scale(scale: f64) {
+    let pt = TEXT_PT * scale;
+    let css = format!("window.note textview.note-text, window.note .placeholder {{ font-size: {pt:.2}pt; }}");
+    TEXT_SIZE.with(|p| p.load_from_string(&css));
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct Swatch {
     /// Note background.
@@ -104,6 +137,17 @@ pub fn load_css() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_scale_steps() {
+        assert_eq!(step_text_scale(1.0, true), 1.1);
+        assert_eq!(step_text_scale(1.0, false), 0.9);
+        assert_eq!(step_text_scale(1.17, true), 1.25); // from a hand-edited value
+        assert_eq!(step_text_scale(1.17, false), 1.1);
+        assert_eq!(step_text_scale(2.5, true), 2.5);
+        assert_eq!(step_text_scale(0.7, false), 0.7);
+        assert_eq!(step_text_scale(9.0, false), 2.5);
+    }
 
     fn luminance(hex: &str) -> f64 {
         let h = hex.trim_start_matches('#');

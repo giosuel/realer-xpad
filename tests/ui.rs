@@ -444,6 +444,41 @@ fn manager_shows_notes_hidden_by_hide_all(c: &Ctx) {
     m.window.close();
 }
 
+fn ctrl_plus_and_minus_resize_the_text(c: &Ctx) {
+    let win = c.new_window();
+    win.editor.set_text("hello");
+    pump(100);
+    let size = |view: &gtk::TextView| view.pango_context().font_description().map_or(0, |f| f.size());
+    let base = size(&win.editor.edit_view);
+    assert!(base > 0);
+    let app = c.app.adw();
+    app.activate_action("text-larger", None);
+    app.activate_action("text-larger", None);
+    pump(100);
+    assert!((c.app.text_scale() - 1.25).abs() < 1e-9);
+    let larger = size(&win.editor.edit_view);
+    assert!(larger > base, "{larger} > {base}");
+    win.editor.show_read(); // a hidden view is restyled when it's shown
+    pump(100);
+    assert_eq!(size(&win.editor.read_view), larger, "both views follow");
+    // Kept beside the notes, and read back when the notes are loaded.
+    let store = NoteStore::new(c.app.store_dir()).unwrap();
+    assert_eq!(store.setting("text-scale").as_deref(), Some("1.25"));
+    c.app.set_text_scale(1.0);
+    c.app.load_notes(store);
+    assert!((c.app.text_scale() - 1.0).abs() < 1e-9);
+    app.activate_action("text-smaller", None);
+    pump(100);
+    let win = c.new_window();
+    pump(100);
+    assert!(size(&win.editor.edit_view) < base, "new notes use it too");
+    app.activate_action("text-reset", None);
+    pump(100);
+    assert_eq!(size(&win.editor.edit_view), base);
+    let accels = app.accels_for_action("app.text-larger");
+    assert!(accels.iter().any(|a| a == "<Control>plus"), "{accels:?}");
+}
+
 fn delete_empty_note_skips_confirmation(c: &Ctx) {
     let win = c.new_window();
     let id = win.id();
@@ -854,6 +889,7 @@ fn main() {
         ("hide_and_show", hide_and_show),
         ("toggle_command_hides_and_restores", toggle_command_hides_and_restores),
         ("manager_shows_notes_hidden_by_hide_all", manager_shows_notes_hidden_by_hide_all),
+        ("ctrl_plus_and_minus_resize_the_text", ctrl_plus_and_minus_resize_the_text),
         ("delete_empty_note_skips_confirmation", delete_empty_note_skips_confirmation),
         ("existing_notes_open_on_show", existing_notes_open_on_show),
         ("read_view_checkbox_click", read_view_checkbox_click),

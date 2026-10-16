@@ -1,6 +1,6 @@
 //! Application: single instance, CLI commands, note lifecycle.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -34,6 +34,8 @@ pub struct AppInner {
     tray: RefCell<Option<tray::Tray>>,
     /// Where to look for xpad notes to import.
     xpad_dir: RefCell<PathBuf>,
+    /// Note text size, 1.0 = 100 %.
+    text_scale: Cell<f64>,
 }
 
 #[derive(Clone)]
@@ -61,6 +63,7 @@ impl App {
             hold: RefCell::default(),
             tray: RefCell::default(),
             xpad_dir: RefCell::new(xpad::default_dir()),
+            text_scale: Cell::new(1.0),
         }));
         let weak = Rc::downgrade(&this.0);
         this.0.app.connect_startup(move |_| {
@@ -125,6 +128,24 @@ impl App {
             if let Some(accel) = accel {
                 self.0.app.set_accels_for_action(&format!("app.{name}"), &[accel]);
             }
+        }
+        let zoom: [(&str, f64, &[&str]); 3] = [
+            ("text-larger", 1.0, &["<Ctrl>plus", "<Ctrl>equal", "<Ctrl>KP_Add"]),
+            ("text-smaller", -1.0, &["<Ctrl>minus", "<Ctrl>KP_Subtract"]),
+            ("text-reset", 0.0, &["<Ctrl>0", "<Ctrl>KP_0"]),
+        ];
+        for (name, dir, accels) in zoom {
+            let action = gio::SimpleAction::new(name, None);
+            let weak = Rc::downgrade(&self.0);
+            action.connect_activate(move |_, _| {
+                if let Some(inner) = weak.upgrade() {
+                    let app = App(inner);
+                    let scale = if dir == 0.0 { 1.0 } else { theme::step_text_scale(app.text_scale(), dir > 0.0) };
+                    app.set_text_scale(scale);
+                }
+            });
+            self.0.app.add_action(&action);
+            self.0.app.set_accels_for_action(&format!("app.{name}"), accels);
         }
         *self.0.hold.borrow_mut() = Some(self.0.app.hold());
         self.start_tray();
@@ -253,7 +274,31 @@ impl App {
         self.0.windows.borrow_mut().clear();
         let notes = store.load_all().into_iter().map(|n| (n.id.clone(), Rc::new(RefCell::new(n)))).collect();
         *self.0.notes.borrow_mut() = notes;
+        let scale = store.setting("text-scale").and_then(|v| v.parse::<f64>().ok()).filter(|s| s.is_finite());
         *self.0.store.borrow_mut() = Some(store);
+        self.apply_text_scale(scale.unwrap_or(1.0));
+    }
+
+    pub fn text_scale(&self) -> f64 {
+        self.0.text_scale.get()
+    }
+
+    /// Resize the text of every note (Ctrl+plus / Ctrl+minus) and remember it.
+    pub fn set_text_scale(&self, scale: f64) {
+        let scale = self.apply_text_scale(scale);
+        if let Some(store) = self.0.store.borrow().as_ref()
+            && let Err(err) = store.set_setting("text-scale", &format!("{scale}"))
+        {
+            eprintln!("realer-xpad: could not save the text size: {err}");
+        }
+    }
+
+    fn apply_text_scale(&self, scale: f64) -> f64 {
+        let (lo, hi) = (theme::TEXT_SCALES[0], theme::TEXT_SCALES[theme::TEXT_SCALES.len() - 1]);
+        let scale = scale.clamp(lo, hi);
+        self.0.text_scale.set(scale);
+        theme::set_text_scale(scale);
+        scale
     }
 
     pub fn store_dir(&self) -> std::path::PathBuf {

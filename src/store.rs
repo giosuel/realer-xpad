@@ -21,6 +21,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::drawing::Stroke;
 
+/// App settings, beside the notes so they follow `REALER_XPAD_DATA`.
+const SETTINGS: &str = "settings.conf";
+
 pub const COLORS: [&str; 7] = ["yellow", "peach", "pink", "lavender", "sky", "mint", "graphite"];
 pub const DEFAULT_COLOR: &str = "yellow";
 pub const DEFAULT_SIZE: (i32, i32) = (300, 300);
@@ -140,6 +143,21 @@ impl NoteStore {
 
     fn json(&self, id: &str) -> PathBuf {
         self.dir.join(format!("{id}.json"))
+    }
+
+    /// A setting from `settings.conf` (`key=value` lines) in the notes folder.
+    pub fn setting(&self, key: &str) -> Option<String> {
+        let text = fs::read_to_string(self.dir.join(SETTINGS)).ok()?;
+        text.lines().find_map(|l| l.split_once('=').filter(|(k, _)| k.trim() == key).map(|(_, v)| v.trim().to_string()))
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> io::Result<()> {
+        let path = self.dir.join(SETTINGS);
+        let old = fs::read_to_string(&path).unwrap_or_default();
+        let mut lines: Vec<String> =
+            old.lines().filter(|l| l.split_once('=').is_none_or(|(k, _)| k.trim() != key)).map(String::from).collect();
+        lines.push(format!("{key}={value}"));
+        atomic_write(&path, &(lines.join("\n") + "\n"))
     }
 
     pub fn load_all(&self) -> Vec<Note> {
@@ -298,6 +316,18 @@ mod tests {
         store.save(&mut note).unwrap();
         assert_eq!(fs::read_to_string(store.md(&note.id)).unwrap(), "# Hi\nthere");
         assert_eq!(store.load(&note.id).unwrap(), note);
+    }
+
+    #[test]
+    fn settings_are_kept_beside_the_notes() {
+        let (_d, store) = store();
+        assert_eq!(store.setting("text-scale"), None);
+        store.set_setting("text-scale", "1.25").unwrap();
+        store.set_setting("other", "x").unwrap();
+        store.set_setting("text-scale", "0.9").unwrap();
+        assert_eq!(store.setting("text-scale").as_deref(), Some("0.9"));
+        assert_eq!(store.setting("other").as_deref(), Some("x"));
+        assert!(store.load_all().is_empty(), "settings are not a note");
     }
 
     #[test]

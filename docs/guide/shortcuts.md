@@ -12,6 +12,8 @@ title: Shortcuts & CLI
 | ++ctrl+e++ | Switch between edit and read view |
 | ++ctrl+d++ | Switch between typing and the last drawing tool |
 | ++ctrl+b++ / ++ctrl+i++ | Bold / italic (wraps the selection) |
+| ++ctrl+plus++ / ++ctrl+minus++ | Larger / smaller text, in every note |
+| ++ctrl+0++ | Text back to its normal size |
 | ++tab++ / ++shift+tab++ | Indent / outdent list item |
 | ++enter++ | Continue list; on an empty item, end it |
 | ++ctrl+w++ | Close (hide) the note |

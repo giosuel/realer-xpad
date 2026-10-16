@@ -13,6 +13,10 @@ use crate::theme::{Swatch, rgba};
 /// values, so the cursor of an empty note sits right where the hint starts.
 pub const TEXT_INSET: i32 = 32;
 pub const TEXT_TOP: i32 = 6;
+/// Read-view checkboxes are drawn this much larger than the text…
+const CHECKBOX_SCALE: f64 = 1.3;
+/// …and clicks this many pixels around them still hit them.
+const CHECKBOX_SLOP: i32 = 4;
 
 fn create_tags(buffer: &gtk::TextBuffer) {
     // Creation order is priority order: later tags win on conflicts.
@@ -132,6 +136,10 @@ impl MarkdownEditor {
             gtk::Stack::builder().transition_type(gtk::StackTransitionType::Crossfade).transition_duration(120).build();
         let edit_view = text_view(true);
         let read_view = text_view(false);
+        // A shown checkbox is a click target: make it bigger than the text.
+        if let Some(tag) = read_view.buffer().tag_table().lookup("checkbox") {
+            tag.set_scale(CHECKBOX_SCALE);
+        }
         stack.add_named(&scrolled(&edit_view), Some("edit"));
         stack.add_named(&scrolled(&read_view), Some("read"));
 
@@ -337,12 +345,27 @@ impl MarkdownEditor {
         view.iter_at_location(bx, by).map(|it| it.offset() as usize)
     }
 
+    /// The checkbox whose box, the space after it, or a few pixels around
+    /// them are at widget coordinates `(x, y)` in the read view.
+    fn checkbox_at(&self, x: f64, y: f64) -> Option<usize> {
+        let view = &self.read_view;
+        let buf = view.buffer();
+        let (bx, by) = view.window_to_buffer_coords(gtk::TextWindowType::Widget, x as i32, y as i32);
+        self.rendered.borrow().checkboxes.iter().find_map(|&(start, _, i)| {
+            let glyph = view.iter_location(&buf.iter_at_offset(start as i32));
+            let space = view.iter_location(&buf.iter_at_offset(start as i32 + 1));
+            let (left, right) = (glyph.x() - CHECKBOX_SLOP, space.x() + space.width());
+            let (top, bottom) = (glyph.y() - CHECKBOX_SLOP, glyph.y() + glyph.height() + CHECKBOX_SLOP);
+            (left <= bx && bx < right && top <= by && by < bottom).then_some(i)
+        })
+    }
+
     fn read_target(&self, x: f64, y: f64) -> Option<ReadTarget> {
-        let offset = Self::offset_at(&self.read_view, x, y)?;
-        let rendered = self.rendered.borrow();
-        if let Some(&(_, _, i)) = rendered.checkboxes.iter().find(|(a, b, _)| *a <= offset && offset < *b) {
+        if let Some(i) = self.checkbox_at(x, y) {
             return Some(ReadTarget::Checkbox(i));
         }
+        let offset = Self::offset_at(&self.read_view, x, y)?;
+        let rendered = self.rendered.borrow();
         if let Some(sp) = rendered.spans.iter().find(|s| s.tag == "link" && s.start <= offset && offset < s.end) {
             return sp.data.clone().map(ReadTarget::Link);
         }

@@ -89,6 +89,20 @@ fn read_view_renders_clean_text(_: &Ctx) {
     assert_eq!(read_text(&ed), "☐ task\nb");
 }
 
+fn copying_from_the_read_view_gives_markdown(_: &Ctx) {
+    let ed = MarkdownEditor::new();
+    let src = "# Milestones\n- Tabs\n- **Lab** menu";
+    ed.set_text(src);
+    ed.show_read();
+    let buf = ed.read_view.buffer();
+    let (start, end) = buf.bounds();
+    buf.select_range(&start, &end);
+    ed.read_view.emit_copy_clipboard();
+    let clipboard = ed.read_view.clipboard();
+    let copied = glib::MainContext::default().block_on(clipboard.read_text_future()).unwrap();
+    assert_eq!(copied.as_deref(), Some(src));
+}
+
 fn toggle_checkbox_is_undoable(_: &Ctx) {
     let ed = MarkdownEditor::new();
     ed.set_text("- [ ] a");
@@ -718,6 +732,7 @@ fn main() {
         ("editor_styles_source_live", editor_styles_source_live),
         ("editor_restyles_after_typing", editor_restyles_after_typing),
         ("read_view_renders_clean_text", read_view_renders_clean_text),
+        ("copying_from_the_read_view_gives_markdown", copying_from_the_read_view_gives_markdown),
         ("toggle_checkbox_is_undoable", toggle_checkbox_is_undoable),
         ("list_continuation_and_exit", list_continuation_and_exit),
         ("wrap_selection_bold", wrap_selection_bold),

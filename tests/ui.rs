@@ -142,6 +142,36 @@ fn indent_list_item(_: &Ctx) {
     assert!(!ed.indent(false));
 }
 
+fn indent_selected_lines(_: &Ctx) {
+    let ed = MarkdownEditor::new();
+    ed.set_text("- one\n- two\n\nthree\n- four");
+    let buf = &ed.buffer;
+    // From inside "one" to inside "three": four lines, the blank one stays empty.
+    buf.select_range(&buf.iter_at_offset(3), &buf.iter_at_offset(16));
+    assert!(ed.indent(false));
+    assert_eq!(ed.text(), "  - one\n  - two\n\n  three\n- four");
+    // The lines stay selected, so pressing Tab again indents them again.
+    let (a, b) = buf.selection_bounds().unwrap();
+    assert_eq!(buf.text(&a, &b, true).as_str(), "  - one\n  - two\n\n  three");
+    assert!(ed.indent(false));
+    assert!(ed.indent(true));
+    assert!(ed.indent(true));
+    assert_eq!(ed.text(), "- one\n- two\n\nthree\n- four");
+    assert!(ed.indent(true)); // nothing left to remove
+    assert_eq!(ed.text(), "- one\n- two\n\nthree\n- four");
+    // A selection that ends at the start of a line leaves that line alone.
+    let two = buf.iter_at_line(1).unwrap();
+    buf.select_range(&buf.start_iter(), &two);
+    assert!(ed.indent(false));
+    assert_eq!(ed.text(), "  - one\n- two\n\nthree\n- four");
+    // One undo takes back a whole Tab.
+    ed.set_text("- a\n- b");
+    buf.select_range(&buf.start_iter(), &buf.end_iter());
+    ed.indent(false);
+    buf.undo();
+    assert_eq!(ed.text(), "- a\n- b");
+}
+
 // -- note windows --------------------------------------------------------------
 
 fn new_note_is_saved_and_shown(c: &Ctx) {
@@ -808,6 +838,7 @@ fn main() {
         ("list_continuation_and_exit", list_continuation_and_exit),
         ("wrap_selection_bold", wrap_selection_bold),
         ("indent_list_item", indent_list_item),
+        ("indent_selected_lines", indent_selected_lines),
         ("new_note_is_saved_and_shown", new_note_is_saved_and_shown),
         ("typing_saves_text", typing_saves_text),
         ("color_change", color_change),

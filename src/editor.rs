@@ -114,6 +114,35 @@ impl std::ops::Deref for MarkdownEditor {
     }
 }
 
+#[derive(Debug, PartialEq)]
+enum ReadKey {
+    Type,
+    Paste,
+    Cut,
+    Other,
+}
+
+/// What a key pressed in the read view means. Keys that only move, select
+/// or copy (arrows, Ctrl+A, Ctrl+C) and shortcuts stay with the read view.
+fn read_key(key: gdk::Key, state: gdk::ModifierType) -> ReadKey {
+    use gdk::ModifierType as M;
+    let ctrl = state.contains(M::CONTROL_MASK);
+    let shift = state.contains(M::SHIFT_MASK);
+    match key {
+        gdk::Key::v | gdk::Key::V if ctrl && !state.intersects(M::ALT_MASK | M::SUPER_MASK) => ReadKey::Paste,
+        gdk::Key::x | gdk::Key::X if ctrl && !state.intersects(M::ALT_MASK | M::SUPER_MASK) => ReadKey::Cut,
+        gdk::Key::Insert | gdk::Key::KP_Insert if shift && !ctrl => ReadKey::Paste,
+        gdk::Key::Delete | gdk::Key::KP_Delete if shift && !ctrl => ReadKey::Cut,
+        _ if state.intersects(M::CONTROL_MASK | M::ALT_MASK | M::SUPER_MASK) => ReadKey::Other,
+        gdk::Key::BackSpace | gdk::Key::Delete | gdk::Key::KP_Delete | gdk::Key::Return | gdk::Key::KP_Enter => {
+            ReadKey::Type
+        }
+        _ if key.to_unicode().is_some_and(|c| !c.is_control()) => ReadKey::Type,
+        _ if key.name().is_some_and(|n| n.starts_with("dead_")) => ReadKey::Type, // accents
+        _ => ReadKey::Other,
+    }
+}
+
 enum ReadTarget {
     Checkbox(usize),
     Link(String),
@@ -199,13 +228,35 @@ impl MarkdownEditor {
         });
         self.read_view.add_controller(click);
 
+        // Typing, deleting or pasting while reading switches to editing, with
+        // the read view's selection carried over so the key replaces it.
+        let keys = gtk::EventControllerKey::new();
+        let weak = self.weak();
+        keys.connect_key_pressed(move |ctl, key, _, state| {
+            let Some(ed) = Self::upgrade(&weak) else { return glib::Propagation::Proceed };
+            match read_key(key, state) {
+                ReadKey::Other => return glib::Propagation::Proceed,
+                ReadKey::Type => {
+                    ed.edit_from_read();
+                    ctl.forward(&ed.edit_view);
+                }
+                ReadKey::Paste => ed.paste_in_read(),
+                ReadKey::Cut => {
+                    ed.edit_from_read();
+                    ed.edit_view.emit_cut_clipboard();
+                }
+            }
+            glib::Propagation::Stop
+        });
+        self.read_view.add_controller(keys);
+
         // Copy the Markdown behind the selection, not its rendering (`•`, `☐`).
         let weak = self.weak();
         self.read_view.connect_copy_clipboard(move |view| {
             let Some(ed) = Self::upgrade(&weak) else { return };
             let Some((a, b)) = view.buffer().selection_bounds() else { return };
             view.stop_signal_emission_by_name("copy-clipboard");
-            let (a, b) = ed.rendered.borrow().source_range(a.offset() as usize, b.offset() as usize);
+            let (a, b) = ed.rendered.borrow().source_range(a.offset() as usize, b.offset() as usize, true);
             let (a, b) = (ed.buffer.iter_at_offset(a as i32), ed.buffer.iter_at_offset(b as i32));
             view.clipboard().set_text(&ed.buffer.text(&a, &b, true));
         });
@@ -253,8 +304,17 @@ impl MarkdownEditor {
     }
 
     pub fn show_read(&self) {
+        if self.reading() && self.pending.borrow().is_none() {
+            return; // up to date; refreshing would drop the selection
+        }
         self.refresh();
+        // Keys must reach the read view (to select, copy, or start editing),
+        // not the hidden source view.
+        let focused = self.edit_view.is_focus();
         self.stack.set_visible_child_name("read");
+        if focused {
+            self.read_view.grab_focus();
+        }
     }
 
     pub fn show_edit(&self, source_offset: Option<usize>) {
@@ -263,6 +323,22 @@ impl MarkdownEditor {
             self.buffer.place_cursor(&self.buffer.iter_at_offset(offset as i32));
         }
         self.edit_view.grab_focus();
+    }
+
+    /// Switch to editing, selecting the source behind the read view's
+    /// selection, or keeping the edit cursor where it was.
+    pub fn edit_from_read(&self) {
+        if let Some((a, b)) = self.read_view.buffer().selection_bounds() {
+            let (a, b) = self.rendered.borrow().source_range(a.offset() as usize, b.offset() as usize, false);
+            self.buffer.select_range(&self.buffer.iter_at_offset(b as i32), &self.buffer.iter_at_offset(a as i32));
+        }
+        self.show_edit(None);
+    }
+
+    /// Paste while reading: switch to editing and paste over the selection.
+    pub fn paste_in_read(&self) {
+        self.edit_from_read();
+        self.edit_view.emit_paste_clipboard();
     }
 
     pub fn rendered_text(&self) -> String {
@@ -466,5 +542,39 @@ impl MarkdownEditor {
         }
         buf.end_user_action();
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gdk::ModifierType as M;
+
+    #[test]
+    fn keys_that_edit_while_reading() {
+        let none = M::empty();
+        assert_eq!(read_key(gdk::Key::a, none), ReadKey::Type);
+        assert_eq!(read_key(gdk::Key::A, M::SHIFT_MASK), ReadKey::Type);
+        assert_eq!(read_key(gdk::Key::space, none), ReadKey::Type);
+        assert_eq!(read_key(gdk::Key::BackSpace, none), ReadKey::Type);
+        assert_eq!(read_key(gdk::Key::Return, none), ReadKey::Type);
+        assert_eq!(read_key(gdk::Key::dead_acute, none), ReadKey::Type);
+        assert_eq!(read_key(gdk::Key::v, M::CONTROL_MASK), ReadKey::Paste);
+        assert_eq!(read_key(gdk::Key::Insert, M::SHIFT_MASK), ReadKey::Paste);
+        assert_eq!(read_key(gdk::Key::x, M::CONTROL_MASK), ReadKey::Cut);
+        // Moving, selecting, copying and other shortcuts stay in the read view.
+        for (key, state) in [
+            (gdk::Key::c, M::CONTROL_MASK),
+            (gdk::Key::a, M::CONTROL_MASK),
+            (gdk::Key::n, M::CONTROL_MASK),
+            (gdk::Key::Left, none),
+            (gdk::Key::Right, M::SHIFT_MASK),
+            (gdk::Key::Escape, none),
+            (gdk::Key::Tab, none),
+            (gdk::Key::Shift_L, none),
+            (gdk::Key::F1, none),
+        ] {
+            assert_eq!(read_key(key, state), ReadKey::Other, "{key:?}");
+        }
     }
 }

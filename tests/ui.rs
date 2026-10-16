@@ -428,6 +428,8 @@ fn ctrl_plus_and_minus_resize_the_text(c: &Ctx) {
     assert!((c.app.text_scale() - 1.25).abs() < 1e-9);
     let larger = size(&win.editor.edit_view);
     assert!(larger > base, "{larger} > {base}");
+    win.editor.show_read(); // a hidden view is restyled when it's shown
+    pump(100);
     assert_eq!(size(&win.editor.read_view), larger, "both views follow");
     // Kept beside the notes, and read back when the notes are loaded.
     let store = NoteStore::new(c.app.store_dir()).unwrap();

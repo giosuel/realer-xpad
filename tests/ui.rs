@@ -10,7 +10,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use adw::prelude::*;
-use gtk::{gio, glib, graphene};
+use gtk::{gdk, gio, glib, graphene};
 use realer_xpad::app::App;
 use realer_xpad::drawing::Stroke;
 use realer_xpad::editor::MarkdownEditor;
@@ -370,6 +370,197 @@ fn canvas_renders(c: &Ctx) {
     let node = snap.to_node().expect("canvas produced render nodes");
     let texture = win.window.renderer().unwrap().render_texture(node, Some(&graphene::Rect::new(0., 0., w, h)));
     assert!(texture.width() > 0);
+}
+
+// -- pictures ------------------------------------------------------------------
+
+/// A plain red picture.
+fn texture(w: i32, h: i32) -> gdk::Texture {
+    let bytes = glib::Bytes::from_owned([220u8, 30, 30, 255].repeat((w * h) as usize));
+    gdk::MemoryTexture::new(w, h, gdk::MemoryFormat::R8g8b8a8, &bytes, (w * 4) as usize).upcast()
+}
+
+/// Press a key in a note window, as its key handler sees it; true if it was used.
+fn key(win: &NoteWindow, k: gdk::Key, mods: gdk::ModifierType) -> bool {
+    use gtk::glib::translate::IntoGlib;
+    let keys = win.window.observe_controllers();
+    let controller =
+        (0..keys.n_items()).filter_map(|i| keys.item(i).and_downcast::<gtk::EventControllerKey>()).next().unwrap();
+    controller.emit_by_name::<bool>("key-pressed", &[&k.into_glib(), &0u32, &mods])
+}
+
+fn wait_for(what: &str, ok: impl Fn() -> bool) {
+    let until = Instant::now() + Duration::from_secs(3);
+    while !ok() {
+        assert!(Instant::now() < until, "timed out waiting for {what}");
+        pump(10);
+    }
+}
+
+fn shown_window(c: &Ctx) -> NoteWindow {
+    let win = c.new_window();
+    wait_for("the note to be laid out", || win.canvas.area.width() > 200);
+    win
+}
+
+const CTRL: gdk::ModifierType = gdk::ModifierType::CONTROL_MASK;
+
+fn pasting_an_image_adds_a_picture(c: &Ctx) {
+    let win = shown_window(c);
+    win.editor.buffer.set_text("keep");
+    win.select_tool("pen");
+    win.window.clipboard().set_texture(&texture(40, 30));
+    assert!(key(&win, gdk::Key::v, CTRL));
+    wait_for("the picture", || win.note.borrow().pictures.len() == 1);
+    let p = win.note.borrow().pictures[0].clone();
+    assert_eq!((p.width, p.height), (40.0, 30.0), "small pictures keep their size");
+    assert!(p.x >= 20.0 && p.y >= 15.0, "on the note: {p:?}"); // centred, but sway may retile it meanwhile
+    assert!(c.app.store_dir().join(&p.file).is_file());
+    assert_eq!(win.tool(), "text", "ready to be moved");
+    assert_eq!(win.canvas.selected().map(|s| s.id), Some(p.id));
+    assert_eq!(win.editor.text(), "keep", "no text pasted");
+
+    assert!(win.undo_btn.is_sensitive());
+    assert!(key(&win, gdk::Key::z, CTRL), "Ctrl+Z undoes the paste");
+    assert!(win.note.borrow().pictures.is_empty() && win.canvas.selected().is_none());
+    assert_eq!(win.editor.text(), "keep");
+
+    win.window.clipboard().set_text("words");
+    assert!(!key(&win, gdk::Key::v, CTRL), "text is pasted as usual");
+
+    win.window.clipboard().set_texture(&texture(2000, 1000));
+    assert!(key(&win, gdk::Key::v, CTRL));
+    wait_for("the big picture", || win.note.borrow().pictures.len() == 1);
+    let p = win.note.borrow().pictures[0].clone();
+    assert!(p.width <= win.canvas.area.width() as f64 * 0.8 + 0.01, "shrunk to fit: {p:?}");
+    assert!((p.width / p.height - 2.0).abs() < 1e-6);
+}
+
+fn pictures_move_resize_and_rotate_with_handles(c: &Ctx) {
+    let win = shown_window(c);
+    assert!(win.add_picture(&texture(100, 50), Some((100.0, 100.0))));
+    let canvas = &win.canvas;
+    let pic = || win.note.borrow().pictures[0].clone();
+    let drag = |from: (f64, f64), to: (f64, f64)| {
+        canvas.begin(from.0, from.1, 1.0, false);
+        canvas.update(to.0, to.1, 1.0);
+        canvas.end();
+    };
+
+    // Over a picture, the drawing layer takes the pointer; elsewhere the text does.
+    let motions = win.body.observe_controllers();
+    let motion = (0..motions.n_items())
+        .filter_map(|i| motions.item(i).and_downcast::<gtk::EventControllerMotion>())
+        .next()
+        .unwrap();
+    motion.emit_by_name::<()>("motion", &[&100.0f64, &100.0f64]);
+    assert!(canvas.area.can_target());
+    assert_eq!(canvas.area.cursor().and_then(|c| c.name()).as_deref(), Some("move"));
+    motion.emit_by_name::<()>("motion", &[&200.0f64, &190.0f64]);
+    assert!(!canvas.area.can_target());
+
+    drag((100.0, 100.0), (120.0, 110.0));
+    assert_eq!((pic().x, pic().y), (120.0, 110.0), "dragged");
+    let top_left = pic().corners()[0];
+    drag(pic().corners()[2], (220.0, 160.0));
+    assert_eq!((pic().width, pic().height), (150.0, 75.0), "resized from the corner");
+    assert_eq!(pic().corners()[0], top_left, "the opposite corner stays");
+    let (x, y) = (pic().x, pic().y);
+    let handle = pic().rotate_handle();
+    drag(handle, (x + (y - handle.1), y));
+    assert!((pic().angle - 90.0).abs() < 1e-6, "rotated: {}", pic().angle);
+
+    for _ in 0..3 {
+        win.undo_btn.emit_clicked();
+    }
+    assert_eq!((pic().x, pic().y, pic().width, pic().angle), (100.0, 100.0, 100.0, 0.0), "one undo step each");
+
+    drag((10.0, 10.0), (10.0, 10.0));
+    assert!(canvas.selected().is_none(), "a click beside it unselects");
+    win.select_tool("pen");
+    drag((100.0, 100.0), (130.0, 120.0));
+    assert_eq!(win.note.borrow().strokes.len(), 1, "the pen draws on pictures");
+    assert_eq!((pic().x, pic().y), (100.0, 100.0));
+}
+
+fn picture_keys_and_menu(c: &Ctx) {
+    let win = shown_window(c);
+    assert!(win.add_picture(&texture(60, 40), Some((100.0, 100.0))));
+    assert!(key(&win, gdk::Key::Escape, gdk::ModifierType::empty()));
+    assert!(win.canvas.selected().is_none(), "Esc unselects");
+
+    win.canvas.begin(100.0, 100.0, 1.0, false);
+    win.canvas.end();
+    assert!(win.canvas.selected().is_some(), "a click selects");
+    win.window.clipboard().set_text("not a picture");
+    assert!(key(&win, gdk::Key::c, CTRL));
+    assert!(win.window.clipboard().formats().contains_type(gdk::Texture::static_type()), "Ctrl+C copies it");
+
+    let p = win.canvas.selected().unwrap();
+    win.canvas.drawing.borrow_mut().set_picture(realer_xpad::drawing::Picture { angle: 30.0, width: 12.0, ..p });
+    assert!(WidgetExt::activate_action(&win.window, "win.reset-image", None).is_ok());
+    let p = win.note.borrow().pictures[0].clone();
+    assert_eq!((p.angle, p.width, p.height), (0.0, 60.0, 40.0), "the menu resets it");
+    assert!(key(&win, gdk::Key::Delete, gdk::ModifierType::empty()));
+    assert!(win.note.borrow().pictures.is_empty());
+    assert!(win.undo_btn.is_sensitive());
+    assert!(key(&win, gdk::Key::z, CTRL), "Ctrl+Z brings it back, though it's no longer selected");
+    assert_eq!(win.note.borrow().pictures.len(), 1);
+
+    win.canvas.begin(100.0, 100.0, 1.0, false);
+    win.canvas.end();
+    win.editor.buffer.insert(&mut win.editor.buffer.end_iter(), "x");
+    assert!(win.canvas.selected().is_none(), "typing goes to the text");
+    assert!(!key(&win, gdk::Key::Delete, gdk::ModifierType::empty()), "and so do keys");
+    assert_eq!(win.note.borrow().pictures.len(), 1);
+}
+
+fn image_files_become_pictures(c: &Ctx) {
+    let win = shown_window(c);
+    let dir = tempfile::tempdir().unwrap();
+    let png = dir.path().join("a.png");
+    texture(30, 20).save_to_png(&png).unwrap();
+    let txt = dir.path().join("b.txt");
+    std::fs::write(&txt, "hello").unwrap();
+    let files = [gio::File::for_path(&png), gio::File::for_path(&txt)];
+    assert!(win.add_picture_files(&files, Some((60.0, 70.0))));
+    let pictures = win.note.borrow().pictures.clone();
+    assert_eq!(pictures.len(), 1, "only the image");
+    assert_eq!((pictures[0].x, pictures[0].y, pictures[0].width), (60.0, 70.0, 30.0), "where it was dropped");
+    assert!(!win.add_picture_files(&files[1..], None));
+}
+
+fn pictures_are_saved_and_drawn(c: &Ctx) {
+    let win = shown_window(c);
+    assert!(win.add_picture(&texture(80, 60), Some((100.0, 100.0))));
+    win.canvas.select(None);
+    win.save_now();
+    let loaded = NoteStore::new(c.app.store_dir()).unwrap().load(&win.id()).unwrap();
+    assert_eq!(loaded.pictures, win.note.borrow().pictures);
+
+    // Under the strokes, and a missing file doesn't break drawing.
+    let missing = realer_xpad::drawing::Picture::new("images/gone.png", (200.0, 150.0), (40.0, 40.0));
+    win.canvas.drawing.borrow_mut().add_picture(missing);
+    win.canvas.drawing.borrow_mut().add(Stroke::new("pen", "#3e63dd", 8.0, vec![(60., 120., 1.), (140., 120., 1.)]));
+    win.canvas.area.queue_draw();
+    pump(100);
+    let (w, h) = (win.canvas.area.width(), win.canvas.area.height());
+    let snap = gtk::Snapshot::new();
+    gtk::WidgetPaintable::new(Some(&win.canvas.area)).snapshot(&snap, w as f64, h as f64);
+    let node = snap.to_node().expect("canvas produced render nodes");
+    let texture =
+        win.window.renderer().unwrap().render_texture(node, Some(&graphene::Rect::new(0., 0., w as f32, h as f32)));
+    let stride = texture.width() as usize * 4;
+    let mut pixels = vec![0u8; stride * texture.height() as usize];
+    texture.download(&mut pixels, stride);
+    let px = |x: usize, y: usize| {
+        let i = y * stride + x * 4;
+        (pixels[i + 2], pixels[i + 1], pixels[i]) // BGRA
+    };
+    let (r, g, b) = px(100, 90);
+    assert!(r > 180 && g < 80 && b < 80, "the picture: {:?}", (r, g, b));
+    let (r, _, b) = px(100, 120);
+    assert!(b > r, "the stroke on top: {:?}", px(100, 120));
 }
 
 fn placeholder_lines_up_with_the_cursor(c: &Ctx) {
@@ -884,6 +1075,11 @@ fn main() {
         ("note_saved_in_draw_mode_reopens_in_draw_mode", note_saved_in_draw_mode_reopens_in_draw_mode),
         ("canvas_pointer_erasing", canvas_pointer_erasing),
         ("canvas_renders", canvas_renders),
+        ("pasting_an_image_adds_a_picture", pasting_an_image_adds_a_picture),
+        ("pictures_move_resize_and_rotate_with_handles", pictures_move_resize_and_rotate_with_handles),
+        ("picture_keys_and_menu", picture_keys_and_menu),
+        ("image_files_become_pictures", image_files_become_pictures),
+        ("pictures_are_saved_and_drawn", pictures_are_saved_and_drawn),
         ("placeholder_lines_up_with_the_cursor", placeholder_lines_up_with_the_cursor),
         ("bundled_icons_are_available", bundled_icons_are_available),
         ("hide_and_show", hide_and_show),

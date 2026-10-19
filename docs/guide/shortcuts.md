@@ -19,7 +19,17 @@ title: Shortcuts & CLI
 | ++ctrl+w++ | Close (hide) the note |
 | ++esc++ | Read view, or back to Text from a drawing tool |
 | ++ctrl++ + click | Open a link while editing |
+| ++ctrl+v++ | Paste; an image on the clipboard goes onto the note |
 | ++ctrl+q++ | Save everything and quit |
+
+## With an image selected
+
+| Keys | Action |
+|---|---|
+| ++delete++ | Delete the image |
+| ++ctrl+c++ | Copy the image |
+| ++esc++ | Unselect it |
+| ++shift++ while rotating | Turn in steps of 15° |
 
 ## While drawing
 

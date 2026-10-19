@@ -1,4 +1,4 @@
-//! Toolkit-independent drawing model: strokes, erasing and undo/redo.
+//! Toolkit-independent drawing model: strokes, pictures, erasing and undo/redo.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -13,6 +13,14 @@ pub const INK_COLORS: [&str; 6] = ["ink", "#e5484d", "#3e63dd", "#30a46c", "#f76
 pub const WIDTHS: [f64; 3] = [2.0, 4.0, 8.0];
 pub const HIGHLIGHTER_SCALE: f64 = 4.0;
 pub const HIGHLIGHTER_ALPHA: f64 = 0.35;
+/// How far above a selected picture its rotation handle sits.
+pub const ROTATE_ARM: f64 = 27.0;
+/// How close to a handle a press must be to grab it.
+pub const HANDLE_REACH: f64 = 9.0;
+/// Pictures can't be resized smaller than this, on their shorter side.
+pub const MIN_PICTURE: f64 = 16.0;
+/// Shift snaps rotation to steps of this many degrees.
+pub const ROTATE_SNAP: f64 = 15.0;
 
 /// A point: x, y and pen pressure (1.0 for mice).
 pub type Point = (f64, f64, f64);
@@ -173,6 +181,147 @@ fn seg_dist(px: f64, py: f64, a: (f64, f64), b: (f64, f64)) -> f64 {
     (px - (a.0 + t * dx)).hypot(py - (a.1 + t * dy))
 }
 
+fn next_id() -> u64 {
+    NEXT_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+/// A pasted image: a file in the notes folder, placed by its centre, size and
+/// rotation (degrees, clockwise). Pictures lie under the strokes.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Picture {
+    /// Process-local identity, used by undo/redo and the selection.
+    #[serde(skip, default = "next_id")]
+    pub id: u64,
+    /// Path relative to the notes folder, e.g. `images/<id>.png`.
+    pub file: String,
+    #[serde(serialize_with = "round1")]
+    pub x: f64,
+    #[serde(serialize_with = "round1")]
+    pub y: f64,
+    #[serde(serialize_with = "round1")]
+    pub width: f64,
+    #[serde(serialize_with = "round1")]
+    pub height: f64,
+    #[serde(default, serialize_with = "round1")]
+    pub angle: f64,
+}
+
+fn round1<S: serde::Serializer>(v: &f64, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_f64(round(*v, 1))
+}
+
+impl PartialEq for Picture {
+    fn eq(&self, other: &Self) -> bool {
+        (&self.file, self.x, self.y, self.width, self.height, self.angle)
+            == (&other.file, other.x, other.y, other.width, other.height, other.angle)
+    }
+}
+
+/// What a press on a picture takes hold of.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Grab {
+    Move,
+    /// A corner, clockwise from the top left.
+    Corner(usize),
+    Rotate,
+}
+
+/// The largest size up to `natural` that fits in `max`, keeping proportions.
+pub fn fit(natural: (f64, f64), max: (f64, f64)) -> (f64, f64) {
+    let (w, h) = (natural.0.max(1.0), natural.1.max(1.0));
+    let s = 1f64.min(max.0 / w).min(max.1 / h).max(MIN_PICTURE / w.min(h));
+    (w * s, h * s)
+}
+
+impl Picture {
+    pub fn new(file: &str, (x, y): (f64, f64), (width, height): (f64, f64)) -> Self {
+        Picture { id: next_id(), file: file.into(), x, y, width, height, angle: 0.0 }
+    }
+
+    fn sin_cos(&self) -> (f64, f64) {
+        self.angle.to_radians().sin_cos()
+    }
+
+    /// A point in the picture's own frame (centre at 0, 0, unrotated) on the note.
+    pub fn to_note(&self, (lx, ly): (f64, f64)) -> (f64, f64) {
+        let (sin, cos) = self.sin_cos();
+        (self.x + lx * cos - ly * sin, self.y + lx * sin + ly * cos)
+    }
+
+    /// A point on the note in the picture's own frame.
+    pub fn to_local(&self, (px, py): (f64, f64)) -> (f64, f64) {
+        let (sin, cos) = self.sin_cos();
+        let (dx, dy) = (px - self.x, py - self.y);
+        (dx * cos + dy * sin, -dx * sin + dy * cos)
+    }
+
+    /// Corner `i`, clockwise from the top left, in the picture's frame.
+    fn corner(&self, i: usize) -> (f64, f64) {
+        let (w, h) = (self.width / 2.0, self.height / 2.0);
+        [(-w, -h), (w, -h), (w, h), (-w, h)][i % 4]
+    }
+
+    pub fn corners(&self) -> [(f64, f64); 4] {
+        [0, 1, 2, 3].map(|i| self.to_note(self.corner(i)))
+    }
+
+    pub fn rotate_handle(&self) -> (f64, f64) {
+        self.to_note((0.0, -self.height / 2.0 - ROTATE_ARM))
+    }
+
+    pub fn contains(&self, x: f64, y: f64) -> bool {
+        let (lx, ly) = self.to_local((x, y));
+        lx.abs() <= self.width / 2.0 && ly.abs() <= self.height / 2.0
+    }
+
+    /// What a press at `(x, y)` grabs; only a selected picture shows handles.
+    pub fn grab_at(&self, x: f64, y: f64, selected: bool) -> Option<Grab> {
+        let near = |(hx, hy): (f64, f64)| (hx - x).hypot(hy - y) <= HANDLE_REACH;
+        if selected {
+            if near(self.rotate_handle()) {
+                return Some(Grab::Rotate);
+            }
+            if let Some(i) = self.corners().into_iter().position(near) {
+                return Some(Grab::Corner(i));
+            }
+        }
+        self.contains(x, y).then_some(Grab::Move)
+    }
+
+    pub fn moved(&self, dx: f64, dy: f64) -> Picture {
+        Picture { x: self.x + dx, y: self.y + dy, ..self.clone() }
+    }
+
+    /// Dragging corner `i` to `(px, py)`: the opposite corner stays put and the
+    /// picture keeps its proportions.
+    pub fn resized(&self, i: usize, px: f64, py: f64) -> Picture {
+        let anchor = self.corner(i + 2);
+        let c = self.corner(i);
+        let d = (c.0 - anchor.0, c.1 - anchor.1);
+        let p = self.to_local((px, py));
+        let p = (p.0 - anchor.0, p.1 - anchor.1);
+        let s = ((p.0 * d.0 + p.1 * d.1) / (d.0 * d.0 + d.1 * d.1)).max(MIN_PICTURE / self.width.min(self.height));
+        let (x, y) = self.to_note((anchor.0 + d.0 * s / 2.0, anchor.1 + d.1 * s / 2.0));
+        Picture { x, y, width: self.width * s, height: self.height * s, ..self.clone() }
+    }
+
+    /// Turning by the angle the pointer swept around the centre since `from`;
+    /// `snap` rounds to [`ROTATE_SNAP`] degrees.
+    pub fn rotated(&self, from: (f64, f64), to: (f64, f64), snap: bool) -> Picture {
+        let swept = (to.1 - self.y).atan2(to.0 - self.x) - (from.1 - self.y).atan2(from.0 - self.x);
+        let mut angle = self.angle + swept.to_degrees();
+        if snap {
+            angle = (angle / ROTATE_SNAP).round() * ROTATE_SNAP;
+        }
+        // Keep it in (-180, 180], so it reads well and saves the same.
+        angle = (angle + 180.0).rem_euclid(360.0) - 180.0;
+        if angle == -180.0 {
+            angle = 180.0;
+        }
+        Picture { angle, ..self.clone() }
+    }
+}
+
 /// One removal: `(index, stroke)` pairs with indices relative to the stroke
 /// list just before the batch was removed.
 type Batch = Vec<(usize, Stroke)>;
@@ -181,20 +330,75 @@ type Batch = Vec<(usize, Stroke)>;
 enum Entry {
     Add(Stroke),
     Remove(Vec<Batch>),
+    /// A picture added (`before` is `None`), removed (`after` is `None`) or
+    /// changed, at `index` in the pictures.
+    Picture {
+        index: usize,
+        before: Option<Picture>,
+        after: Option<Picture>,
+    },
 }
 
-/// A list of strokes with undo/redo.
+/// A list of strokes, and the pictures under them, with undo/redo.
 #[derive(Clone, Debug, Default)]
 pub struct Drawing {
     pub strokes: Vec<Stroke>,
+    pub pictures: Vec<Picture>,
     undo: Vec<Entry>,
     redo: Vec<Entry>,
     erasing: Option<Vec<Batch>>,
 }
 
 impl Drawing {
-    pub fn new(strokes: Vec<Stroke>) -> Self {
-        Drawing { strokes, ..Default::default() }
+    pub fn new(strokes: Vec<Stroke>, pictures: Vec<Picture>) -> Self {
+        Drawing { strokes, pictures, ..Default::default() }
+    }
+
+    pub fn picture(&self, id: u64) -> Option<&Picture> {
+        self.pictures.iter().find(|p| p.id == id)
+    }
+
+    /// The topmost picture at `(x, y)`.
+    pub fn picture_at(&self, x: f64, y: f64) -> Option<&Picture> {
+        self.pictures.iter().rev().find(|p| p.contains(x, y))
+    }
+
+    pub fn add_picture(&mut self, picture: Picture) {
+        self.pictures.push(picture.clone());
+        self.push(Entry::Picture { index: self.pictures.len() - 1, before: None, after: Some(picture) });
+    }
+
+    pub fn remove_picture(&mut self, id: u64) -> bool {
+        let Some(index) = self.pictures.iter().position(|p| p.id == id) else { return false };
+        let before = self.pictures.remove(index);
+        self.push(Entry::Picture { index, before: Some(before), after: None });
+        true
+    }
+
+    /// Show a picture moved, resized or turned, without an undo step yet (while
+    /// it's being dragged): see [`Drawing::commit_picture`].
+    pub fn set_picture(&mut self, picture: Picture) {
+        if let Some(p) = self.pictures.iter_mut().find(|p| p.id == picture.id) {
+            *p = picture;
+        }
+    }
+
+    /// One undo step from `before` to how the picture is now.
+    pub fn commit_picture(&mut self, before: Picture) {
+        let Some(index) = self.pictures.iter().position(|p| p.id == before.id) else { return };
+        if self.pictures[index] != before {
+            let after = Some(self.pictures[index].clone());
+            self.push(Entry::Picture { index, before: Some(before), after });
+        }
+    }
+
+    fn put_picture(&mut self, index: usize, id: u64, picture: Option<&Picture>) {
+        match (self.pictures.iter().position(|p| p.id == id), picture) {
+            (Some(i), Some(p)) => self.pictures[i] = p.clone(),
+            (Some(i), None) => drop(self.pictures.remove(i)),
+            (None, Some(p)) => self.pictures.insert(index.min(self.pictures.len()), p.clone()),
+            (None, None) => {}
+        }
     }
 
     pub fn can_undo(&self) -> bool {
@@ -296,6 +500,11 @@ impl Drawing {
                 for (_, s) in batches.iter().flatten() {
                     self.remove_id(s.id);
                 }
+            }
+            (Entry::Picture { index, before, after }, reverse) => {
+                let (from, to) = if reverse { (after, before) } else { (before, after) };
+                let Some(id) = from.as_ref().or(to.as_ref()).map(|p| p.id) else { return };
+                self.put_picture(*index, id, to.as_ref());
             }
         }
     }
@@ -476,7 +685,7 @@ mod tests {
 
     #[test]
     fn shapes_erase_and_save_like_strokes() {
-        let mut d = Drawing::new(vec![shape("ellipse", 0.0, 0.0, 40.0, 40.0)]);
+        let mut d = Drawing::new(vec![shape("ellipse", 0.0, 0.0, 40.0, 40.0)], vec![]);
         assert!(!d.erase_at(20.0, 20.0, 5.0), "erasing inside an ellipse leaves it");
         assert!(d.erase_at(40.0, 20.0, 5.0));
         assert!(d.strokes.is_empty());
@@ -491,5 +700,105 @@ mod tests {
         let out = smooth_points(&pts);
         assert_eq!((out[0], out[2]), (pts[0], pts[2]));
         assert_eq!(out[1].1, 5.0);
+    }
+
+    fn close(a: (f64, f64), b: (f64, f64)) -> bool {
+        (a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9
+    }
+
+    #[test]
+    fn pictures_are_hit_where_they_are_drawn() {
+        let mut p = Picture::new("images/a.png", (100.0, 100.0), (80.0, 40.0));
+        assert!(p.contains(130.0, 110.0) && !p.contains(100.0, 130.0));
+        assert!(close(p.corners()[2], (140.0, 120.0)));
+        p.angle = 90.0; // now tall
+        assert!(p.contains(100.0, 130.0) && !p.contains(130.0, 100.0));
+        assert!(close(p.corners()[0], (120.0, 60.0)));
+        assert!(close(p.to_local(p.to_note((3.0, -7.0))), (3.0, -7.0)));
+    }
+
+    #[test]
+    fn only_a_selected_picture_has_handles() {
+        let p = Picture::new("images/a.png", (100.0, 100.0), (80.0, 40.0));
+        let (hx, hy) = p.rotate_handle();
+        assert!(close((hx, hy), (100.0, 80.0 - ROTATE_ARM)));
+        assert_eq!(p.grab_at(hx, hy + 2.0, true), Some(Grab::Rotate));
+        assert_eq!(p.grab_at(hx, hy + 2.0, false), None);
+        assert_eq!(p.grab_at(143.0, 122.0, true), Some(Grab::Corner(2)), "a little outside counts");
+        assert_eq!(p.grab_at(138.0, 118.0, false), Some(Grab::Move));
+        assert_eq!(p.grab_at(100.0, 100.0, true), Some(Grab::Move));
+    }
+
+    #[test]
+    fn corners_resize_keeping_proportions_and_the_opposite_corner() {
+        let p = Picture::new("images/a.png", (100.0, 100.0), (80.0, 40.0));
+        let r = p.resized(2, 180.0, 140.0);
+        assert!(close((r.width, r.height), (120.0, 60.0)), "{r:?}");
+        assert!(close(r.corners()[0], p.corners()[0]));
+        let r = p.resized(2, 0.0, 0.0);
+        assert!(close((r.width, r.height), (2.0 * MIN_PICTURE, MIN_PICTURE)), "not smaller than the minimum");
+
+        let p = Picture { angle: 30.0, ..p };
+        let (x, y) = p.corners()[1];
+        let r = p.resized(1, x + 15.0, y - 10.0);
+        assert!(r.width > p.width && (r.width / r.height - 2.0).abs() < 1e-9);
+        assert!(close(r.corners()[3], p.corners()[3]), "turned pictures too");
+        assert_eq!(r.angle, 30.0);
+    }
+
+    #[test]
+    fn rotating_follows_the_pointer_and_snaps() {
+        let p = Picture::new("images/a.png", (100.0, 100.0), (80.0, 40.0));
+        let r = p.rotated((100.0, 50.0), (150.0, 100.0), false);
+        assert!((r.angle - 90.0).abs() < 1e-9);
+        let r = p.rotated((100.0, 50.0), (112.0, 50.0), false);
+        assert!(r.angle > 10.0 && r.angle < 15.0);
+        assert_eq!(p.rotated((100.0, 50.0), (112.0, 50.0), true).angle, 15.0);
+        let r = Picture { angle: 170.0, ..p.clone() }.rotated((100.0, 50.0), (150.0, 100.0), false);
+        assert!((r.angle + 100.0).abs() < 1e-9, "kept within ±180: {}", r.angle);
+        assert_eq!(p.moved(5.0, -5.0).to_note((0.0, 0.0)), (105.0, 95.0));
+    }
+
+    #[test]
+    fn pictures_fit_without_growing() {
+        assert_eq!(fit((1000.0, 500.0), (200.0, 200.0)), (200.0, 100.0));
+        assert_eq!(fit((50.0, 40.0), (200.0, 200.0)), (50.0, 40.0));
+    }
+
+    #[test]
+    fn picture_changes_undo_in_order() {
+        let mut d = Drawing::default();
+        let a = Picture::new("images/a.png", (50.0, 50.0), (20.0, 20.0));
+        let b = Picture::new("images/b.png", (80.0, 50.0), (20.0, 20.0));
+        d.add_picture(a.clone());
+        d.add_picture(b.clone());
+        d.set_picture(a.moved(10.0, 0.0)); // dragging
+        d.set_picture(a.moved(30.0, 0.0));
+        d.commit_picture(a.clone());
+        d.commit_picture(b.clone()); // unchanged: no step
+        assert!(d.remove_picture(a.id));
+        assert!(!d.remove_picture(a.id));
+        assert!(d.pictures.len() == 1 && d.pictures[0] == b);
+        assert!(d.undo());
+        assert_eq!(d.pictures, [a.moved(30.0, 0.0), b.clone()], "back in its place, under b");
+        assert!(d.undo());
+        assert_eq!(d.pictures, [a.clone(), b.clone()], "the whole drag is one step");
+        assert!(d.undo() && d.undo());
+        assert!(d.pictures.is_empty() && !d.can_undo());
+        assert!(d.redo() && d.redo() && d.redo());
+        assert_eq!(d.pictures[0].x, 80.0);
+        assert_eq!(d.picture_at(85.0, 50.0).map(|p| &p.file), Some(&b.file), "the top one");
+    }
+
+    #[test]
+    fn pictures_save_rounded_and_load_with_new_ids() {
+        let mut p = Picture::new("images/a.png", (10.04, 20.0), (30.0, 40.0));
+        p.angle = -12.345;
+        let json = serde_json::to_string(&p).unwrap();
+        assert_eq!(json, r#"{"file":"images/a.png","x":10.0,"y":20.0,"width":30.0,"height":40.0,"angle":-12.3}"#);
+        let back: Picture =
+            serde_json::from_str(r#"{"file":"images/a.png","x":1,"y":2,"width":3,"height":4}"#).unwrap();
+        assert_eq!((back.angle, back.width), (0.0, 3.0));
+        assert_ne!(back.id, p.id);
     }
 }

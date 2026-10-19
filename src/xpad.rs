@@ -217,7 +217,7 @@ pub fn import(store: &NoteStore, dir: &Path) -> io::Result<Vec<Note>> {
         // doesn't import the first ones twice next time.
         done.push(xpad.info);
         done.sort();
-        atomic_write(&store.dir.join(MARKER), &done.iter().map(|d| format!("{d}\n")).collect::<String>())?;
+        atomic_write(&store.dir.join(MARKER), done.iter().map(|d| format!("{d}\n")).collect::<String>())?;
         notes.push(note);
     }
     Ok(notes)

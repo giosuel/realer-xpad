@@ -14,6 +14,8 @@ sha256sums=('817c168c55809c94626e8291453976ceb249694eb007b2c78f2dd485bcdfe4f6')
 
 prepare() {
   cd "$pkgname-$pkgver"
+  # The repository is at version 0.0.0; releases take theirs from the tag.
+  tools/stamp-version.sh "$pkgver"
   export RUSTUP_TOOLCHAIN=stable
   cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
 }

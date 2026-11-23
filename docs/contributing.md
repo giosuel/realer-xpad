@@ -81,18 +81,26 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-docs.txt
 
 ## Releasing
 
-1. Bump `version` in `Cargo.toml` and run `cargo update -p realer-xpad` so
-   `Cargo.lock` matches. CI builds with `--locked` and fails otherwise.
-2. Add a `<release>` entry with notes to
-   `extras/ch.giosuel.RealerXpad.metainfo.xml`.
-3. Merge that to `main`, then push a matching tag from it:
+Versions come from git tags, so there is nothing to bump. `Cargo.toml` stays
+at `0.0.0`, and CI stamps the real version into every build
+(`tools/version.sh` works it out, `tools/stamp-version.sh` writes it):
+
+- a tag `v0.2.0` builds version `0.2.0`;
+- any other commit builds the next patch as a dev version, e.g.
+  `0.1.8-dev.5` for five commits after `v0.1.7`.
+
+To release, push an annotated tag on `main`. Its message is the release notes:
+a paragraph, then `- ` lines for a list.
 
 ```sh
-git checkout main && git pull && git tag v0.2.0 && git push origin v0.2.0
+git fetch origin && git tag -a v0.2.0 origin/main && git push origin v0.2.0
 ```
 
-CI checks that the tag matches the version, then publishes a GitHub release
-with the AppImage (plus `.zsync` for delta updates), a binary tarball, the
-Flatpak bundle and `SHA256SUMS`, and updates both AUR packages. The
-`pkgver` in `packaging/aur/*/PKGBUILD` is set from the tag at that point, so
-the copies in this repo don't need bumping.
+CI then publishes a GitHub release with the AppImage (plus `.zsync` for delta
+updates), a binary tarball, the Flatpak bundle and `SHA256SUMS`, and updates
+both AUR packages. The tag's message goes at the top of the release, followed
+by the list of merged PRs. It also becomes the release's entry in the AppStream
+metainfo, written at build time (the repository keeps only older entries). A tag
+with a `-` (`v0.2.0-rc.1`) is a pre-release: no AUR update. The `pkgver` in
+`packaging/aur/*/PKGBUILD` is set from the tag too, so the copies in this repo
+don't need bumping.

@@ -40,11 +40,33 @@ scribble inside a box leaves the box alone.
     sketch drawn in light mode stays readable after your system switches to
     dark mode.
 
-## Undo & redo
+## Images
+
+Paste an image with ++ctrl+v++ (a screenshot, an image copied in a browser,
+or image files copied in a file manager), or drop image files onto a note.
+It lands in the middle of the note, shrunk to fit if it's bigger, and is
+selected so you can place it straight away:
+
+- drag it to **move** it;
+- drag a **corner** to resize it, keeping its proportions;
+- drag the **round handle** above it to rotate it; hold ++shift++ to turn in
+  steps of 15°.
+
+With Text selected, a click on an image selects it and a click anywhere else
+goes back to the text. Right-click an image for *Copy Image*, *Reset Size &
+Rotation* and *Delete Image*. ++delete++ removes the selected image, ++ctrl+c++
+copies it and ++esc++ unselects it.
+
+Images lie on top of the text and under the drawing, so you can circle things
+on a screenshot with the pen: with a drawing tool selected, the tool draws on
+the image instead of picking it up. The eraser only removes strokes, never
+images.
+
 
 ++ctrl+z++ undoes and ++ctrl+shift+z++ (or ++ctrl+y++) redoes, as do the
-arrows at the end of the tool row. With Text selected they undo typing; with a
-drawing tool they undo strokes. One drag of the eraser counts as a single
+arrows at the end of the tool row. With Text selected they undo typing, or
+changes to images while one is selected or was the last thing you changed;
+with a drawing tool they undo strokes and images. One drag of the eraser counts as a single
 step, and so does *Clear Drawing*, so both can be undone.
 
 ## Pen tablets
@@ -57,3 +79,6 @@ selected.
 
 Strokes are saved as smoothed vector points in the note's `.json` file, not as
 an image. They stay sharp at any size and add very little to the file.
+
+Pasted images are saved as PNG files in the `images` folder next to the notes,
+and the note's `.json` file keeps where each one is, its size and its rotation.

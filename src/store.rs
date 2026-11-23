@@ -5,6 +5,8 @@
 //! * `<id>.md`   – the note's Markdown text, readable with any editor
 //! * `<id>.json` – metadata (colour, size, position, drawing strokes, ...)
 //!
+//! Pasted pictures are PNG files in `images/`, which notes refer to by name.
+//!
 //! Deleted notes are moved to `trash/` instead of being removed outright.
 //! Files are only rewritten when their content changed. If a note's `.md`
 //! was edited elsewhere while the app also changed it, the other version is
@@ -19,7 +21,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::drawing::Stroke;
+use crate::drawing::{Picture, Stroke};
 
 /// App settings, beside the notes so they follow `REALER_XPAD_DATA`.
 const SETTINGS: &str = "settings.conf";
@@ -71,6 +73,8 @@ pub struct Note {
     /// `"text"` or `"draw"`.
     pub mode: String,
     pub strokes: Vec<Stroke>,
+    #[serde(rename = "images", skip_serializing_if = "Vec::is_empty")]
+    pub pictures: Vec<Picture>,
     pub created: f64,
     pub updated: f64,
     /// What the files on disk hold, as of the last load or save.
@@ -101,6 +105,7 @@ impl Default for Note {
             visible: true,
             mode: "text".into(),
             strokes: Vec::new(),
+            pictures: Vec::new(),
             created: t,
             updated: t,
             disk: None,
@@ -118,11 +123,18 @@ impl Note {
                 return line.chars().take(60).collect();
             }
         }
-        if self.strokes.is_empty() { "Empty note" } else { "Drawing" }.into()
+        if !self.strokes.is_empty() {
+            "Drawing"
+        } else if !self.pictures.is_empty() {
+            "Image"
+        } else {
+            "Empty note"
+        }
+        .into()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.text.trim().is_empty() && self.strokes.is_empty()
+        self.text.trim().is_empty() && self.strokes.is_empty() && self.pictures.is_empty()
     }
 }
 
@@ -157,7 +169,7 @@ impl NoteStore {
         let mut lines: Vec<String> =
             old.lines().filter(|l| l.split_once('=').is_none_or(|(k, _)| k.trim() != key)).map(String::from).collect();
         lines.push(format!("{key}={value}"));
-        atomic_write(&path, &(lines.join("\n") + "\n"))
+        atomic_write(&path, lines.join("\n") + "\n")
     }
 
     pub fn load_all(&self) -> Vec<Note> {
@@ -268,8 +280,18 @@ impl NoteStore {
     }
 }
 
+/// The drawing, pictures included, to tell whether it changed.
 fn strokes_json(note: &Note) -> Option<String> {
-    serde_json::to_string(&note.strokes).ok()
+    serde_json::to_string(&(&note.strokes, &note.pictures)).ok()
+}
+
+/// Save a PNG to `images/` in the notes folder `dir`; returns the name notes refer to it by.
+pub fn save_image(dir: &Path, png: &[u8]) -> io::Result<String> {
+    let images = dir.join("images");
+    fs::DirBuilder::new().recursive(true).mode(0o700).create(&images)?;
+    let name = format!("images/{}.png", new_id());
+    atomic_write(&dir.join(&name), png)?;
+    Ok(name)
 }
 
 fn meta_json(note: &Note) -> Option<String> {
@@ -278,11 +300,11 @@ fn meta_json(note: &Note) -> Option<String> {
 
 /// Write to a temporary file, flush it to disk, then rename it over `path`, so a
 /// crash leaves either the old or the new content, never an empty file.
-pub(crate) fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
+pub(crate) fn atomic_write(path: &Path, content: impl AsRef<[u8]>) -> io::Result<()> {
     let mut tmp = path.as_os_str().to_owned();
     tmp.push(".tmp");
     let mut file = fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&tmp)?;
-    file.write_all(content.as_bytes())?;
+    file.write_all(content.as_ref())?;
     file.sync_all()?;
     fs::rename(&tmp, path)?;
     if let Some(dir) = path.parent() {
@@ -392,6 +414,28 @@ mod tests {
         let kept: Vec<_> = fs::read_dir(store.dir.join("trash")).unwrap().flatten().map(|e| e.path()).collect();
         assert_eq!(kept.len(), 1);
         assert_eq!(fs::read_to_string(&kept[0]).unwrap(), "edited in vim");
+    }
+
+    #[test]
+    fn pictures_are_saved_with_the_note() {
+        use crate::drawing::Picture;
+        use std::os::unix::fs::PermissionsExt;
+        let (_d, store) = store();
+        let mut note = Note::default();
+        store.save(&mut note).unwrap();
+        assert!(!fs::read_to_string(store.json(&note.id)).unwrap().contains("images"), "no empty list in old notes");
+        let name = save_image(&store.dir, b"png").unwrap();
+        assert!(name.starts_with("images/") && name.ends_with(".png"));
+        assert_eq!(fs::read(store.dir.join(&name)).unwrap(), b"png");
+        assert_eq!(fs::metadata(store.dir.join(&name)).unwrap().permissions().mode() & 0o777, 0o600);
+        note.pictures.push(Picture::new(&name, (10.0, 20.0), (30.0, 40.0)));
+        let updated = note.updated;
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert!(store.save(&mut note).unwrap());
+        assert!(note.updated > updated, "adding a picture is an edit");
+        assert_eq!(store.load(&note.id).unwrap().pictures, note.pictures);
+        assert!(!note.is_empty());
+        assert_eq!(note.title(), "Image");
     }
 
     #[test]

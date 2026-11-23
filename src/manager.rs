@@ -190,6 +190,9 @@ impl Manager {
         if !note.strokes.is_empty() {
             meta += " · ✎ drawing";
         }
+        if !note.pictures.is_empty() {
+            meta += " · image";
+        }
         let meta_label = gtk::Label::builder().label(meta).xalign(0.0).build();
         meta_label.add_css_class("card-meta");
         texts.append(&meta_label);

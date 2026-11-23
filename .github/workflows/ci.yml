@@ -19,6 +19,42 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.stamp.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the tags, for tools/version.sh
+      # The checkout can turn an annotated tag into a lightweight one; fetch it again for its message.
+      - name: Fetch the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+      - name: Stamp the version
+        id: stamp
+        run: |
+          version=$(tools/version.sh)
+          : > release-notes.md
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            git tag -l --format='%(contents)' "$GITHUB_REF_NAME" | sed '/^-----BEGIN PGP SIGNATURE-----/,$d' > release-notes.md
+            # A message that is just the tag's name carries no notes.
+            [[ "$(tr -d '[:space:]' < release-notes.md)" != "$GITHUB_REF_NAME" ]] || : > release-notes.md
+          fi
+          tools/stamp-version.sh "$version" release-notes.md
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          git diff --stat
+      - uses: actions/upload-artifact@v7
+        with:
+          name: version
+          # Stamped into every job that builds the app.
+          path: |
+            Cargo.toml
+            Cargo.lock
+            extras/ch.giosuel.RealerXpad.metainfo.xml
+            release-notes.md
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -81,7 +117,7 @@ jobs:
 
   build:
     name: Build
-    needs: [lint, test]
+    needs: [version, lint, test]
     runs-on: ubuntu-latest
     # Built on Debian 13 (glibc 2.41, GTK 4.18) so the binary runs on current distros.
     container: debian:trixie
@@ -92,6 +128,9 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             build-essential pkg-config libgtk-4-dev libadwaita-1-dev curl ca-certificates git
       - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: version
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --locked
@@ -99,8 +138,7 @@ jobs:
         run: ./target/release/realer-xpad --version
       - name: Package
         run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          name="realer-xpad-$version-x86_64-linux"
+          name="realer-xpad-${{ needs.version.outputs.version }}-x86_64-linux"
           mkdir -p "dist/$name"
           cp target/release/realer-xpad install.sh LICENSE README.md "dist/$name/"
           cp -r extras "dist/$name/"
@@ -116,7 +154,7 @@ jobs:
 
   appimage:
     name: AppImage
-    needs: [lint, test]
+    needs: [version, lint, test]
     runs-on: ubuntu-latest
     container: debian:trixie
     steps:
@@ -127,6 +165,9 @@ jobs:
             build-essential pkg-config libgtk-4-dev libadwaita-1-dev librsvg2-common \
             adwaita-icon-theme file curl ca-certificates git sway dbus fonts-dejavu-core
       - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: version
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build AppImage
@@ -150,7 +191,7 @@ jobs:
 
   flatpak:
     name: Flatpak
-    needs: [lint, test]
+    needs: [version, lint, test]
     runs-on: ubuntu-latest
     # Flathub's own builder image, matching the manifest's runtime.
     container:
@@ -158,12 +199,13 @@ jobs:
       options: --privileged
     steps:
       - uses: actions/checkout@v7
-      - id: version
-        run: echo "version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v8
+        with:
+          name: version
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6.8
         with:
           manifest-path: packaging/flatpak/ch.giosuel.RealerXpad.yml
-          bundle: Realer_Xpad-${{ steps.version.outputs.version }}-x86_64.flatpak
+          bundle: Realer_Xpad-${{ needs.version.outputs.version }}-x86_64.flatpak
           # Inside .flatpak-builder, which the manifest's dir source skips.
           build-dir: .flatpak-builder/build
           repo-dir: .flatpak-builder/repo
@@ -176,32 +218,31 @@ jobs:
   release:
     name: Publish release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, appimage, flatpak]
+    needs: [version, build, appimage, flatpak]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
-      - name: Tag must match the crate version
-        run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $version"
-            exit 1
-          fi
       - uses: actions/download-artifact@v8
         with:
           path: dist/
+          pattern: "{dist,appimage,flatpak}"
           merge-multiple: true  # tarball, AppImage (+ .zsync) and Flatpak side by side
+      - uses: actions/download-artifact@v8
+        with:
+          name: version
+          path: version/
       - name: Checksums
         run: (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The tag's message first, then GitHub's list of merged PRs.
           gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
             --title "Realer Xpad ${GITHUB_REF_NAME#v}" \
-            --generate-notes \
+            --notes-file version/release-notes.md --generate-notes \
             $([[ "$GITHUB_REF_NAME" == *-* ]] && echo --prerelease)
 
   aur:

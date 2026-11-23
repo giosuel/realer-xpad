@@ -13,6 +13,15 @@ commit=$(git ls-remote "$url" "refs/tags/$tag^{}" | cut -f1)
 
 awk -v url="$url" -v tag="$tag" -v commit="$commit" '
   /# flathub-manifest.sh swaps/ { next }
+  # The repository is at version 0.0.0; stamp the tag'"'"'s version before building.
+  /build-commands:/ {
+    print
+    getline
+    indent = substr($0, 1, index($0, "-") - 1)
+    print indent "- tools/stamp-version.sh " substr(tag, 2)
+    print
+    next
+  }
   /- type: dir/ {
     indent = substr($0, 1, index($0, "-") - 1)
     print indent "- type: git"

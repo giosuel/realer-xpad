@@ -39,6 +39,8 @@ jobs:
           : > release-notes.md
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             git tag -l --format='%(contents)' "$GITHUB_REF_NAME" | sed '/^-----BEGIN PGP SIGNATURE-----/,$d' > release-notes.md
+            # A message that is just the tag's name carries no notes.
+            [[ "$(tr -d '[:space:]' < release-notes.md)" != "$GITHUB_REF_NAME" ]] || : > release-notes.md
           fi
           tools/stamp-version.sh "$version" release-notes.md
           echo "version=$version" >> "$GITHUB_OUTPUT"
